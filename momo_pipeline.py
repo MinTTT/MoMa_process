@@ -253,7 +253,7 @@ class MomoFov:
             self.mother_cell_pars[chambername] = []
             for tm_inx, time in enumerate(self.times['phase']):
                 cell_mask = np.zeros(self.chamber_cells_mask[chambername].shape[1:], np.uint8)
-                if len(self.chamber_cells_contour[chambername][tm_inx]) != 0:
+                if self.chamber_cells_contour[chambername][tm_inx]:
                     mother_cell_contour = self.chamber_cells_contour[chambername][tm_inx][0]
                     cell_mask = cv2.drawContours(cell_mask, [mother_cell_contour], 0, 255, -1)
                     rotrect = cv2.minAreaRect(mother_cell_contour)
