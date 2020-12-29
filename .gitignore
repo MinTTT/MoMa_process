@@ -1,9 +1,10 @@
 # Ignore hdf5 files:
 *.hdf5
-
+.idea
 # Ignore bytecode:
 __pycache__
 *.pyc
 
 # Ignore debugging file:
 debugging.py
+
