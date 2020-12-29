@@ -24,7 +24,7 @@ import tensorflow as tf
 import cv2
 import tifffile as tif
 from utils.delta.utilities import getChamberBoxes, getDriftTemplate, driftcorr, rangescale, cropbox
-from skimage.io import imread
+from joblib import Parallel, load, dump
 from utils.delta.utilities import cropbox
 from skimage import io
 from utils.rotation import rotate_fov
@@ -308,12 +308,16 @@ class MomoFov:
         self.extract_mother_cells_features()
         print("Now, get mother cells data.\n")
         self.parse_mother_cell_data()
+        self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
+        del self.phase_ims
+
 
 # %%
-DIR = r'F:\ZJW_CP\20201227'
+DIR = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
 fovs_name = [MomoFov(folder, DIR) for folder in os.listdir(DIR) if folder.split('_')[0] == 'fov']
 
-fovs_name[1].process_flow()
+fovs_name[0].process_flow()
+dump(fovs_name[0], os.path.join(fovs_name[0].dir, fovs_name[0].fov_name + '.jl'))
 
 # %%
 fig1, ax = plt.subplots(1, 1)
