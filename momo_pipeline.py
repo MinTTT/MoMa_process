@@ -175,7 +175,7 @@ class MomoFov:
                                                       template=self.drifttemplate, box=driftcorbox)
         xcorr_one = int(self.drift_values[0][0])
         ycorr_one = int(self.drift_values[1][0])
-        for box in self.chamberboxes:
+        for box in self.chamberboxes:  # TODO: frame shift have bugs
             box['ytl'] += xcorr_one
             box['ybr'] += xcorr_one
             box['xtl'] -= ycorr_one
@@ -184,7 +184,7 @@ class MomoFov:
         num_time = len(self.times)
         sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
         selected_ims = self.phase_ims[sample_index, ...]
-        cells_threshold = 0.23
+        cells_threshold = 0.31
         chamber_loaded = []
         for box in self.chamberboxes:
             mean_chamber = np.mean(selected_ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']])
@@ -196,6 +196,7 @@ class MomoFov:
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
 
     def cell_detection(self):
+        # TODO: parallel must be done
         seg_inputs = []
         # Compile segmentation inputs:
         for m, chamberbox in enumerate(self.loaded_chamber_box):
@@ -208,7 +209,7 @@ class MomoFov:
         print('processing cell segmentation.')
         seg = model_seg.predict(seg_inputs, verbose=1)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
-        # -------------- reform the size--------------
+        # -------------- reform the size-------------- TODO: parallel 1
         for m, box in enumerate(self.loaded_chamber_box):
             ori_frames = np.empty([len(self.times['phase']), box['ybr'] - box['ytl'], box['xbr'] - box['xtl']]).astype(
                 np.uint16)
@@ -344,14 +345,19 @@ fovs_name = [MomoFov(folder, DIR) for folder in os.listdir(DIR)
 
 # _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
 
-for fov_index in range(len(fovs_name)):
+for fov_index in list(range(0, 85))[9:]:
     fovs_name[fov_index].process_flow()
     dump(fovs_name[fov_index], os.path.join(fovs_name[fov_index].dir, fovs_name[fov_index].fov_name + '.jl'))
     del fovs_name[fov_index]
 
 # %%
+fig1, ax = plt.subplots(1, 1)
+im = cropbox(fovs_name[10].phase_ims[8, ...], fovs_name[10].chamberboxes[19] )
+print(np.mean(im))
+ax.imshow(im)
 
-
+fig1.show()
+#%%
 # # %% make sure their cells in channel
 # num_time = len(fovs_name[0].times)
 # sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
