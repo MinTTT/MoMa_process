@@ -87,6 +87,9 @@ def get_fluo_channel(ps, drift):
     return im, time
 
 
+def parallel_seg_input(im, chamberbox):
+    return cv2.resize(cropbox(im, chamberbox), (32, 256))
+
 class MomoFov:
     def __init__(self, name, dir):
         self.fov_name = name
@@ -184,10 +187,11 @@ class MomoFov:
         num_time = len(self.times)
         sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
         selected_ims = self.phase_ims[sample_index, ...]
-        cells_threshold = 0.31
+        cells_threshold = 0.30
         chamber_loaded = []
         for box in self.chamberboxes:
-            mean_chamber = np.mean(selected_ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']])
+            half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl']/2 + box['ytl']), box['xtl']:box['xbr']]
+            mean_chamber = np.mean(half_chambers)
             if mean_chamber < cells_threshold:
                 chamber_loaded.append(True)
             else:
@@ -199,9 +203,15 @@ class MomoFov:
         # TODO: parallel must be done
         seg_inputs = []
         # Compile segmentation inputs:
+        # for m, chamberbox in enumerate(self.loaded_chamber_box):
+        #     if chamberbox:
+        #         for i in range(self.phase_ims.shape[0]):
+        #             seg_inputs.append(cv2.resize(rangescale(cropbox(self.phase_ims[i], chamberbox), (0, 1)), (32, 256)))
         for m, chamberbox in enumerate(self.loaded_chamber_box):
-            for i in range(self.phase_ims.shape[0]):
-                seg_inputs.append(cv2.resize(rangescale(cropbox(self.phase_ims[i], chamberbox), (0, 1)), (32, 256)))
+            if chamberbox:
+                sub_inputs = Parallel(n_jobs=60)(delayed(parallel_seg_input)(self.phase_ims[i], chamberbox)
+                                                 for i in range(self.phase_ims.shape[0]))
+            seg_inputs += sub_inputs
 
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
         # Format into 4D tensor
@@ -309,7 +319,7 @@ class MomoFov:
 
     def parse_mother_cell_data(self):
         pf_list = []
-        for chna in self.loaded_chamber_name:
+        for chna in self.loaded_chamber_name:  # drop channels don't have cells.
             if self.mother_cell_pars[chna]:
                 pf = pd.DataFrame(data=self.mother_cell_pars[chna])
                 time = [float(t.split(',')[-1]) for t in pf['time_point']]
@@ -320,15 +330,15 @@ class MomoFov:
         self.dataframe_mother_cells.index = pd.Index(range(len(self.dataframe_mother_cells)))
 
     def process_flow(self):
-        print('Now, detect channels.\n')
+        print(f'Now, {self.fov_name}: detect channels.\n')
         self.detect_channels()
-        print('Now, detect frameshift.\n')
+        print(f'Now, {self.fov_name}: detect frameshift.\n')
         self.detect_frameshift()
-        print('Now, detect cells.\n')
+        print(f'Now, {self.fov_name}: detect cells.\n')
         self.cell_detection()
-        print("Now, extract cells' features.\n")
+        print(f"Now, {self.fov_name}: extract cells' features.\n")
         self.extract_mother_cells_features()
-        print("Now, get mother cells data.\n")
+        print(f"Now, {self.fov_name}: get mother cells data.\n")
         self.parse_mother_cell_data()
         self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         del self.phase_ims
@@ -346,17 +356,16 @@ fovs_name = [MomoFov(folder, DIR) for folder in os.listdir(DIR)
 
 # _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
 
-for fov_index in list(range(0, 85))[9:]:
+for fov_index in list(range(0, 85))[20:]:
     fovs_name[fov_index].process_flow()
     dump(fovs_name[fov_index], os.path.join(fovs_name[fov_index].dir, fovs_name[fov_index].fov_name + '.jl'))
     del fovs_name[fov_index]
 
 # %%
 fig1, ax = plt.subplots(1, 1)
-im = cropbox(fovs_name[10].phase_ims[8, ...], fovs_name[10].chamberboxes[19] )
+im = cropbox(fovs_name[17].phase_ims[8, ...], fovs_name[17].chamberboxes[2])
 print(np.mean(im))
 ax.imshow(im)
-
 fig1.show()
 #%%
 # # %% make sure their cells in channel
