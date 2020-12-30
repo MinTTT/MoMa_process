@@ -13,6 +13,7 @@ import sys
 import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
+import time
 # […]
 
 # Own modules
@@ -67,6 +68,7 @@ def get_times(dir, name, channels):
     tim_dict = dict()
     for channel in channels:
         file_name = os.listdir(os.path.join(dir, name, channel))
+        file_name = [name for name in file_name if name.split('.')[-1] == 'tiff']
         file_name.sort(key=lambda elem: int(elem.split('.')[0][1:]))
         tim_dict[channel] = file_name
     return tim_dict
@@ -89,6 +91,21 @@ def get_fluo_channel(ps, drift):
 
 def parallel_seg_input(im, chamberbox):
     return cv2.resize(cropbox(im, chamberbox), (32, 256))
+
+
+
+def parallel_seg_input2(ims, box, size=(256, 32)):
+    def resize_map(i, size):
+        resize_ims[i, ...] = cv2.resize(subims[i, ...], size[::-1])
+        return None
+
+    subims = ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
+    ims_num = len(subims)
+    resize_ims = np.empty((ims_num, ) + size)
+    _ = Parallel(n_jobs=60, require='sharedmem')(delayed(resize_map)(i, size) for i in range(ims_num))
+    return resize_ims
+
+
 
 class MomoFov:
     def __init__(self, name, dir):
@@ -157,17 +174,36 @@ class MomoFov:
         This function used to detect frame shift.
         :return:
         """
-        self.phase_ims = []
-        phase_tp = []
+
         print('loading phase images. \n')
-        for fn in tqdm(self.times['phase']):
+        # self.phase_ims = []
+        # phase_tp = []
+        # for fn in tqdm(self.times['phase']):
+        #     im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
+        #     if self.chamber_direction == 0:
+        #         im = im[::-1, :]
+        #     im, _ = rotate_fov(np.expand_dims(im, axis=0), crop=False)
+        #     self.phase_ims.append(rangescale(im.squeeze(), (0, 1)))
+        #     phase_tp.append(tp)
+        # self.time_points['phase'] = phase_tp
+        # # self.phase_ims, _ = rotate_fov(np.array(self.phase_ims), crop=False)
+        # self.phase_ims = np.array(self.phase_ims)
+        # ---------------------------------------------
+        self.phase_ims = np.zeros((len(self.times['phase']),) + self.template_frame.shape)
+        self.time_points['phase'] = [False] * len(self.times['phase'])
+        def parallel_input(fn, inx):
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
             if self.chamber_direction == 0:
                 im = im[::-1, :]
-            self.phase_ims.append(rangescale(im, (0, 1)))
-            phase_tp.append(tp)
-        self.time_points['phase'] = phase_tp
-        self.phase_ims, _ = rotate_fov(np.array(self.phase_ims), crop=False)
+            im, _ = rotate_fov(np.expand_dims(im, axis=0), crop=False)
+            self.phase_ims[inx, ...] = rangescale(im.squeeze(), (0, 1))
+            self.time_points['phase'][inx] = tp
+            return None
+        _ = Parallel(n_jobs=60, require='sharedmem')(delayed(parallel_input)(fn, i) for i, fn in tqdm(enumerate(self.times['phase'])))
+
+        while False in self.time_points['phase']:
+            time.sleep(1)
+
         print(f'ims shape is {self.phase_ims.shape}')
         driftcorbox = dict(xtl=0,
                            xbr=None,
@@ -201,17 +237,25 @@ class MomoFov:
 
     def cell_detection(self):
         # TODO: parallel must be done
-        seg_inputs = []
+        # seg_inputs = []
         # Compile segmentation inputs:
         # for m, chamberbox in enumerate(self.loaded_chamber_box):
         #     if chamberbox:
         #         for i in range(self.phase_ims.shape[0]):
         #             seg_inputs.append(cv2.resize(rangescale(cropbox(self.phase_ims[i], chamberbox), (0, 1)), (32, 256)))
+        # seg_inputs = []
+        # for m, chamberbox in enumerate(self.loaded_chamber_box):
+        #     if chamberbox:
+        #         sub_inputs = Parallel(n_jobs=60)(delayed(parallel_seg_input)(self.phase_ims[i], chamberbox)
+        #                                          for i in range(self.phase_ims.shape[0]))
+        #     seg_inputs += sub_inputs
+        seg_inputs = ()
         for m, chamberbox in enumerate(self.loaded_chamber_box):
             if chamberbox:
-                sub_inputs = Parallel(n_jobs=60)(delayed(parallel_seg_input)(self.phase_ims[i], chamberbox)
-                                                 for i in range(self.phase_ims.shape[0]))
-            seg_inputs += sub_inputs
+                print(f'resize ch_{m}')
+                sub_inputs = parallel_seg_input2(self.phase_ims, chamberbox)
+                seg_inputs += (sub_inputs, )
+        seg_inputs = np.concatenate(seg_inputs, axis=0)
 
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
         # Format into 4D tensor
@@ -351,19 +395,22 @@ def parallel_process(fov):
 
 # %%
 DIR = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
-fovs_name = [MomoFov(folder, DIR) for folder in os.listdir(DIR)
+jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
+fov_folder = [folder for folder in os.listdir(DIR)
              if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
+untreated = list(set(fov_folder) - set(jl_file))
+fovs_name = [MomoFov(folder, DIR) for folder in untreated]
 
 # _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
 
-for fov_index in list(range(0, 85))[20:]:
-    fovs_name[fov_index].process_flow()
-    dump(fovs_name[fov_index], os.path.join(fovs_name[fov_index].dir, fovs_name[fov_index].fov_name + '.jl'))
-    del fovs_name[fov_index]
+for fov in fovs_name:
+    fov.process_flow()
+    dump(fov, os.path.join(fov.dir, fov.fov_name + '.jl'))
+    del fov
 
 # %%
 fig1, ax = plt.subplots(1, 1)
-im = cropbox(fovs_name[17].phase_ims[8, ...], fovs_name[17].chamberboxes[2])
+im = cropbox(fov.phase_ims[-1, ...], fov.chamberboxes[2])
 print(np.mean(im))
 ax.imshow(im)
 fig1.show()
