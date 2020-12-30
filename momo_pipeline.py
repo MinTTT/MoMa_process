@@ -73,10 +73,12 @@ def get_times(dir, name, channels):
         tim_dict[channel] = file_name
     return tim_dict
 
+
 def back_corrt(im: np.ndarray, bac: float) -> np.ndarray:
     im -= bac
     im[im < 0] = 0.
     return im
+
 
 def get_im_time(ps):
     with tif.TiffFile(ps) as tim:
@@ -93,7 +95,6 @@ def parallel_seg_input(im, chamberbox):
     return cv2.resize(cropbox(im, chamberbox), (32, 256))
 
 
-
 def parallel_seg_input2(ims, box, size=(256, 32)):
     def resize_map(i, size):
         resize_ims[i, ...] = cv2.resize(subims[i, ...], size[::-1])
@@ -101,10 +102,9 @@ def parallel_seg_input2(ims, box, size=(256, 32)):
 
     subims = ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
     ims_num = len(subims)
-    resize_ims = np.empty((ims_num, ) + size)
+    resize_ims = np.empty((ims_num,) + size)
     _ = Parallel(n_jobs=60, require='sharedmem')(delayed(resize_map)(i, size) for i in range(ims_num))
     return resize_ims
-
 
 
 class MomoFov:
@@ -133,6 +133,8 @@ class MomoFov:
         self.mother_cell_pars = dict()
         self.dataframe_mother_cells = pd.DataFrame(data=[])
         self.index_of_loaded_chamber = []
+        self.chamber_graylevel = []
+        self.chamber_seg = None
 
     def detect_channels(self, number=0):
         """
@@ -162,7 +164,7 @@ class MomoFov:
         if np.mean(v_m[0:(len(v_m) // 2)]) >= np.mean(v_m[(len(v_m) // 2):]):
             self.chamber_direction = 0
             self.chambermask = chambermask[::-1, :]
-            self.chamberboxes = getChamberBoxes(np.squeeze(chambermask))
+            self.chamberboxes = getChamberBoxes(np.squeeze(self.chambermask))
             self.drifttemplate = getDriftTemplate(self.chamberboxes, im.squeeze()[::-1, :])
         else:
             self.chamber_direction = 1
@@ -191,6 +193,7 @@ class MomoFov:
         # ---------------------------------------------
         self.phase_ims = np.zeros((len(self.times['phase']),) + self.template_frame.shape)
         self.time_points['phase'] = [False] * len(self.times['phase'])
+
         def parallel_input(fn, inx):
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
             if self.chamber_direction == 0:
@@ -199,7 +202,9 @@ class MomoFov:
             self.phase_ims[inx, ...] = rangescale(im.squeeze(), (0, 1))
             self.time_points['phase'][inx] = tp
             return None
-        _ = Parallel(n_jobs=60, require='sharedmem')(delayed(parallel_input)(fn, i) for i, fn in tqdm(enumerate(self.times['phase'])))
+
+        _ = Parallel(n_jobs=60, require='sharedmem')(
+            delayed(parallel_input)(fn, i) for i, fn in tqdm(enumerate(self.times['phase'])))
 
         while False in self.time_points['phase']:
             time.sleep(1)
@@ -223,17 +228,23 @@ class MomoFov:
         num_time = len(self.times)
         sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
         selected_ims = self.phase_ims[sample_index, ...]
-        cells_threshold = 0.30
+        cells_threshold = 0.258
         chamber_loaded = []
+        chamber_graylevel = []
         for box in self.chamberboxes:
-            half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl']/2 + box['ytl']), box['xtl']:box['xbr']]
+            half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl'] / 2 + box['ytl']),
+                            box['xtl']:box['xbr']]
             mean_chamber = np.mean(half_chambers)
+            chamber_graylevel.append(mean_chamber)
             if mean_chamber < cells_threshold:
                 chamber_loaded.append(True)
             else:
                 chamber_loaded.append(False)
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
+        self.chamber_graylevel = chamber_graylevel
+        print(chamber_graylevel)
+        print(f'detect chamber loaded: {self.loaded_chamber_name}.')
 
     def cell_detection(self):
         # TODO: parallel must be done
@@ -254,10 +265,11 @@ class MomoFov:
             if chamberbox:
                 print(f'resize ch_{m}')
                 sub_inputs = parallel_seg_input2(self.phase_ims, chamberbox)
-                seg_inputs += (sub_inputs, )
+                seg_inputs += (sub_inputs,)
         seg_inputs = np.concatenate(seg_inputs, axis=0)
 
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
+        self.chamber_seg = seg_inputs
         # Format into 4D tensor
         # Run segmentation U-Net:
         print('processing cell segmentation.')
@@ -314,7 +326,6 @@ class MomoFov:
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
                     red_time_points.append(time_point)
                 self.time_points['red'] = red_time_points
-
 
         for cha_name_inx, chambername in enumerate(self.loaded_chamber_name):
             self.mother_cell_pars[chambername] = []
@@ -386,18 +397,32 @@ class MomoFov:
         self.parse_mother_cell_data()
         self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         del self.phase_ims
+        save_data = dict(directory=self.dir,
+                         fov_name=self.fov_name,
+                         times=self.times,
+                         time_points=self.time_points,
+                         light_channels=self.channels,
+                         chamber_box=self.chamberboxes,
+                         chamber_loaded_name=self.loaded_chamber_name,
+                         chamber_loaded_index=self.index_of_loaded_chamber,
+                         chamber_grayvalue=self.chamber_graylevel,
+                         chamber_direction=self.chamber_direction,
+                         chamber_cells_mask=self.chamber_cells_mask,
+                         chamber_cells_contour=self.chamber_cells_contour,
+                         chamber_green_images=self.chamber_green_ims,
+                         chamber_red_images=self.chamber_red_ims,
+                         mother_cells_parameters=self.mother_cell_pars,
+                         mother_cells_dataframe=self.dataframe_mother_cells
+                         )
+        dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'))
         return None
 
-def parallel_process(fov):
-    fovs_name[fov].process_flow()
-    dump(fovs_name[fov], os.path.join(fovs_name[fov].dir, fovs_name[fov].fov_name + '.jl'))
-    del fovs_name[fov]
 
 # %%
 DIR = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
 jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
 fov_folder = [folder for folder in os.listdir(DIR)
-             if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
+              if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
 untreated = list(set(fov_folder) - set(jl_file))
 fovs_name = [MomoFov(folder, DIR) for folder in untreated]
 
@@ -405,95 +430,26 @@ fovs_name = [MomoFov(folder, DIR) for folder in untreated]
 
 for fov in fovs_name:
     fov.process_flow()
-    dump(fov, os.path.join(fov.dir, fov.fov_name + '.jl'))
-    del fov
 
 # %%
+
+jldb = load(os.path.join(DIR, 'fov_90.jl'))
+
+# %%
+print(jldb.loaded_chamber_name)
 fig1, ax = plt.subplots(1, 1)
-im = cropbox(fov.phase_ims[-1, ...], fov.chamberboxes[2])
+im = jldb.chamber_cells_mask['ch_8'][18]
 print(np.mean(im))
 ax.imshow(im)
 fig1.show()
-#%%
-# # %% make sure their cells in channel
-# num_time = len(fovs_name[0].times)
-# sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
-# selected_ims = fovs_name[0].phase_ims[sample_index, ...]
-# cells_threshold = 0.23
-# chamber_loaded = []
-# for box in fovs_name[0].chamberboxes:
-#     mean_chamber = np.mean(selected_ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']])
-#     if mean_chamber < cells_threshold:
-#         chamber_loaded.append(True)
-#     else:
-#         chamber_loaded.append(False)
-# loaded_chamber_box = [fovs_name[0].chamberboxes[index] for index in list(np.where(chamber_loaded)[0])]
-#
-# # %%
-# fovs_name = [folder for folder in os.listdir(DIR) if folder.split('_')[0] == 'fov']
-# flu_channels_name = os.listdir(os.path.join(DIR, fovs_name[0]))
-# # time_points = os.listdir(os.path.join(DIR, fovs_name[0], flu_channels_name[0]))
-# fovs_list = []
-# for f, fov in enumerate(tqdm(fovs_name)):
-#     flu_channels_name = os.listdir(os.path.join(DIR, fovs_name[f]))
-#     times = []
-#     for flu, flu_ch in enumerate(flu_channels_name):
-#         time_points = os.listdir(os.path.join(DIR, fovs_name[f], flu_channels_name[flu]))
-#         times.append(time_points)
-#     fovs_list.append(times)
-# # %%
-# TEST_SEG_FOV = fovs_list[1][1]
-#
-# # im = tif.imread(os.path.join(DIR, fovs_name[1], flu_channels_name[1], TEST_SEG_FOV[0]))
-# # v_m = vertical_mean(im)
-# # v_m[(v_m - np.median(v_m)) < 0] = 0
-# # f_v = np.mean(v_m[0:len(v_m)//2])
-# # r_v = np.mean(v_m[len(v_m)//2:-1])
-# ims = []
-# for im_name in tqdm(fovs_list[1][1][0:10]):
-#     im = io.imread(os.path.join(DIR, fovs_name[1], flu_channels_name[1], im_name))
-#     im, _ = rotate_fov(np.expand_dims(im, axis=0), crop=False)
-#     im = rangescale(im.squeeze(), rescale=(0, 1))
-#     ims.append(im)
-# ims = np.array(ims)
-# # im_crp = cropbox(im_ro.squeeze(), roi)
-# # im_crp = im_crp[::-1, ...]
-# # io.imsave('/'.join([save_folder, im_name]), im_crp, check_contrast=False)
-#
-# ims = ims[:, ::-1, :]
-#
-# # Rotation correction:
-# firstframe = np.expand_dims(np.expand_dims(cv2.resize(ims[0].squeeze(), (512, 512)), axis=0), axis=3)
-# # using expand_dims to get it into a shape that the chambers id unet accepts
-# # Find chambers, filter results, get bounding boxes:
-# chambermask = model_chambers.predict(firstframe, verbose=0)
-# chambermask = cv2.resize(np.squeeze(chambermask), ims.shape[3:0:-1])  # scaling back to original size
-# chambermask = postprocess(chambermask, min_size=min_chamber_area)  # Binarization, cleaning and area filtering
-# chamberboxes = getChamberBoxes(np.squeeze(chambermask))
-#
-# # Drift correction:
-# drifttemplate = getDriftTemplate(chamberboxes,
-#                                  ims[0].squeeze())  # This template will be used as reference for drift correction
-# driftcorbox = dict(xtl=0,
-#                    xbr=None,
-#                    ytl=0,
-#                    ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl']
-#                    )  # Box to match template
-# ims, driftvalues = driftcorr(ims, template=drifttemplate, box=driftcorbox)  # Run drift corr
-# # Load up fluoresence images, apply drift correction and rotation:
-#
-#
-# ##### Cell segmentation:
-#
-# seg_inputs = []
-# # Compile segmentation inputs:
-# for m, chamberbox in enumerate(chamberboxes):
-#     for i in range(ims.shape[0]):
-#         seg_inputs.append(cv2.resize(rangescale(cropbox(ims[i], chamberbox), (0, 1)),
-#                                      (32, 256)))
-#
-# seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
-# # Format into 4D tensor
-# # Run segmentation U-Net:
-# seg = model_seg.predict(seg_inputs, verbose=1)
-# seg = postprocess(seg[:, :, :, 0])
+# %%
+
+num_time = len(fov.time_points)
+sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
+selected_ims = jldb.phase_ims[sample_index, ...]
+cells_threshold = 0.30
+chamber_loaded = []
+for box in jldb.chamberboxes:
+    half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl'] / 2 + box['ytl']), box['xtl']:box['xbr']]
+    mean_chamber = np.mean(half_chambers)
+    print(mean_chamber)
