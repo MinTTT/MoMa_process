@@ -236,7 +236,7 @@ class MomoFov:
             #     chamber_loaded.append(True)
             # else:
             #     chamber_loaded.append(False)
-        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel)/2
+        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel)*0.6
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
