@@ -221,7 +221,7 @@ def getChamberBoxes(chambersmask):
             xtl=xtl,
             ytl=int(ytl - (boxheight * .08)),  # -10% of height to make sure the top isn't cropped
             xbr=xtl + boxwidth,
-            ybr=int(ytl + boxheight * 0.5)))  # tl = top left, br = bottom right. MODIFY: add more 10% of height
+            ybr=int(ytl + boxheight * 1.1)))  # tl = top left, br = bottom right. MODIFY: add more 10% of height
     chamberboxes.sort(key=lambda elem: elem['xtl'])  # Sorting by top-left X (normally sorted by Y top left)
     return chamberboxes
 

@@ -91,11 +91,8 @@ def get_fluo_channel(ps, drift):
     return im, time
 
 
-def parallel_seg_input(im, chamberbox):
-    return cv2.resize(cropbox(im, chamberbox), (32, 256))
 
-
-def parallel_seg_input2(ims, box, size=(256, 32)):
+def parallel_seg_input(ims, box, size=(256, 32)):
     def resize_map(i, size):
         resize_ims[i, ...] = cv2.resize(subims[i, ...], size[::-1])
         return None
@@ -176,8 +173,7 @@ class MomoFov:
         This function used to detect frame shift.
         :return:
         """
-
-        print('loading phase images. \n')
+        print(f'{self.fov_name}:loading phase images. \n')
         # self.phase_ims = []
         # phase_tp = []
         # for fn in tqdm(self.times['phase']):
@@ -209,7 +205,7 @@ class MomoFov:
         while False in self.time_points['phase']:
             time.sleep(1)
 
-        print(f'ims shape is {self.phase_ims.shape}')
+        print(f'{self.fov_name}: ims shape is {self.phase_ims.shape}.')
         driftcorbox = dict(xtl=0,
                            xbr=None,
                            ytl=0,
@@ -246,27 +242,13 @@ class MomoFov:
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
         self.chamber_graylevel = chamber_graylevel
         print(chamber_graylevel)
-        print(f'detect chamber loaded number: {len(self.loaded_chamber_box)}.')
+        print(f'{self.fov_name}: detect chamber loaded number: {len(self.loaded_chamber_box)}.')
 
     def cell_detection(self):
-        # TODO: parallel must be done
-        # seg_inputs = []
-        # Compile segmentation inputs:
-        # for m, chamberbox in enumerate(self.loaded_chamber_box):
-        #     if chamberbox:
-        #         for i in range(self.phase_ims.shape[0]):
-        #             seg_inputs.append(cv2.resize(rangescale(cropbox(self.phase_ims[i], chamberbox), (0, 1)), (32, 256)))
-        # seg_inputs = []
-        # for m, chamberbox in enumerate(self.loaded_chamber_box):
-        #     if chamberbox:
-        #         sub_inputs = Parallel(n_jobs=60)(delayed(parallel_seg_input)(self.phase_ims[i], chamberbox)
-        #                                          for i in range(self.phase_ims.shape[0]))
-        #     seg_inputs += sub_inputs
         seg_inputs = ()
         for m, chamberbox in enumerate(self.loaded_chamber_box):
             if chamberbox:
-                print(f'resize ch_{m}')
-                sub_inputs = parallel_seg_input2(self.phase_ims, chamberbox)
+                sub_inputs = parallel_seg_input(self.phase_ims, chamberbox)
                 seg_inputs += (sub_inputs,)
         seg_inputs = np.concatenate(seg_inputs, axis=0)
 
@@ -274,7 +256,6 @@ class MomoFov:
         self.chamber_seg = seg_inputs
         # Format into 4D tensor
         # Run segmentation U-Net:
-        print('processing cell segmentation.')
         seg = model_seg.predict(seg_inputs, verbose=1)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
         # -------------- reform the size-------------- TODO: parallel 1
@@ -284,10 +265,10 @@ class MomoFov:
             for t in range(len(self.times['phase'])):
                 frame_index = t + m * len(self.times['phase'])
                 ori_frames[t] = cv2.resize(self.cell_mask[frame_index], ori_frames.shape[2:0:-1])
-            self.chamber_cells_mask[f'ch_{m}'] = ori_frames
+            self.chamber_cells_mask[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_frames
         # -------------- get cells contour ------------
         self.loaded_chamber_name = list(self.chamber_cells_mask.keys())
-        for m, channel in enumerate(self.loaded_chamber_name):
+        for channel in self.loaded_chamber_name:
             contours_list = []
             for time_mask in self.chamber_cells_mask[channel]:
                 contours = cv2.findContours((time_mask > 0).astype(np.uint8),
@@ -381,7 +362,7 @@ class MomoFov:
                 pf = pd.DataFrame(data=self.mother_cell_pars[chna])
                 time = [float(t.split(',')[-1]) for t in pf['time_point']]
                 pf['time_s'] = time
-                pf['channel'] = [chna] * len(pf)
+                pf['chamber'] = [f'{self.fov_name}_{chna}'] * len(pf)
                 pf_list.append(pf)
         self.dataframe_mother_cells = pd.concat(pf_list, sort=False)
         self.dataframe_mother_cells.index = pd.Index(range(len(self.dataframe_mother_cells)))

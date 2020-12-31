@@ -3,7 +3,91 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from joblib import load
+import os
+from tqdm import tqdm
+import sys
+sys.path.append(r'D:\python_code\data_explore')
+import sciplot as splt
+import seaborn as sns
+splt.whitegrid()
 
+
+def convert_time(time):
+    h, s = divmod(time, 60*60)
+    m, s = divmod(s, 60)
+    h = h + m/60 + s/3600
+    return h
+
+
+#%%
+dir = r'X:/chupan/mother machine/20201225_NCM_pECJ3_M5_L3/'
+#
+all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
+dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
+
+for i, df in enumerate(dfs):
+    chamber = [f'fov{i}_{ch}' for ch in df['channel']]
+    df['chamber'] = chamber
+dfs = pd.concat(dfs)
+dfs.index = pd.Index(range(len(dfs)))
+dfs['time_h'] = [convert_time(s) for s in dfs['time_s']-min(dfs['time_s'])]
+
+fd_dfs = dfs[dfs['area'] > 100]
+print(f'''all chambers {len(list(set(fd_dfs['chamber'])))}''')
+#%%
+fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
+ax.hist(np.log(fd_dfs['area']), bins=100)
+ax.set_xlabel('Cell area (log(pixels))')
+ax.set_ylabel('Number')
+fig1.show()
+#%%
+
+fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
+cells = list(set(fd_dfs['chamber']))
+cells = np.random.choice(cells, 3)
+fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
+for cell in cells:
+    ax.plot(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
+               fd_dfs[fd_dfs['chamber'] == cell]['area'])
+    ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
+               fd_dfs[fd_dfs['chamber'] == cell]['area'],
+               s=158)
+# ax.set_yscale('log')
+ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.0,
+            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.2)
+fig2.show()
+
+#%%
+ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
+fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
+cells = list(set(ff_dfs['chamber']))
+cells = np.random.choice(cells, 50)
+for cell in cells:
+    ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
+               ff_dfs[ff_dfs['chamber'] == cell]['green_mean']/ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '--y')
+    # ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'], ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '-r')
+# ax[0].set_ylim(100, 50000)
+ax[0].set_yscale('log')
+ax[0].set_xlim(0)
+ax[0].set_xlabel('Time (h)')
+ax[0].set_ylabel('Fold increase (gfp/rfp)')
+
+for cell in cells:
+    ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'])
+ax[1].set_xscale('log')
+ax[1].set_xlim(100, 2000)
+ax[1].set_yscale('log')
+ax[1].set_ylim(100, 10000)
+ax[1].set_xlabel('Rfp intensity')
+ax[1].set_ylabel('Gfp intensity')
+
+fig1.show()
+
+
+#%%
+fig2, ax = plt.subplots(1, 1)
+sns.histplot(x=ff_dfs['red_mean'], y=ff_dfs['green_mean'], ax=ax)
+fig2.show()
 
 #%%
 df = pd.read_csv(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_55_statistic.csv')
@@ -30,15 +114,15 @@ fig1.show()
 
 
 #%%
-df = pd.read_csv(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_55_statistic.csv')
-cells = list(set(df['channel']))
+# df = pd.read_csv(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_55_statistic.csv')
+cells = list(set(dfs['chamber']))
 fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
-for cell in cells[5:7]:
-    ax.scatter(df[df['channel'] == cell]['time_s'], df[df['channel'] == cell]['area'])
+for cell in cells:
+    ax.plot(dfs[dfs['channel'] == cell]['time_h'], dfs[dfs['channel'] == cell]['area'])
 
 # ax.set_yscale('log')
-ax.set_xlim(df['time_s'].min() + np.ptp(df['time_s'])*0.0,
-            df['time_s'].min() + np.ptp(df['time_s'])*0.8)
+ax.set_xlim(dfs['time_h'].min() + np.ptp(dfs['time_h'])*0.0,
+            dfs['time_h'].min() + np.ptp(dfs['time_h'])*1)
 fig2.show()
 # fig1, ax = plt.subplots(1, 1)
 # for cell in cells:
