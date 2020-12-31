@@ -7,7 +7,7 @@ to minimize the risk of unforeseen bugs.
 '''
 import cv2, os, re
 import numpy as np
-
+from joblib import Parallel, delayed
 
 def deskew(image):
     '''
@@ -114,7 +114,7 @@ def rangescale(frame, rescale):
     return frame
 
 
-def driftcorr(img, template=None, box=None, drift=None):
+def driftcorr(img, template=None, box=None, drift=None, parallel=True):
     '''
     Compute drift between current frame and the reference, and return corrected
     image
@@ -159,17 +159,33 @@ def driftcorr(img, template=None, box=None, drift=None):
     else:
         (xcorr, ycorr) = drift
 
-    for i in range(img.shape[0]):
+    def parallel_drift(inx):
         if drift is None:
-            frame = rangescale(img[i], (0, 255)).astype(np.uint8)  # Making sure its the right format
+            frame = rangescale(img[inx], (0, 255)).astype(np.uint8)  # Making sure its the right format
             driftcorrimg = cropbox(frame, box)  # crop part of image for matching
             res = cv2.matchTemplate(driftcorrimg, template, cv2.TM_CCOEFF_NORMED)
             _, _, _, max_loc = cv2.minMaxLoc(res)  # top left corner
-            ycorr[i] = max_loc[0] - res.shape[1] / 2  #　TODO: why size should over 2 ?
-            xcorr[i] = max_loc[1] - res.shape[0] / 2  #　TODO: why size should over 2 ?
-        T = np.float32([[1, 0, -ycorr[i]], 
-                        [0, 1, -xcorr[i]]])  # xcorr: direction for shiftting along y axis
-        img[i] = cv2.warpAffine(img[i], T, img.shape[3:0:-1])
+            ycorr[inx] = max_loc[0] - res.shape[1] / 2  # TODO: why size should over 2 ?
+            xcorr[inx] = max_loc[1] - res.shape[0] / 2  # TODO: why size should over 2 ?
+        T = np.float32([[1, 0, -ycorr[inx]],
+                        [0, 1, -xcorr[inx]]])  # xcorr: direction for shiftting along y axis
+        img[inx] = cv2.warpAffine(img[inx], T, img.shape[3:0:-1])
+
+
+    if parallel:
+        _ = Parallel(n_jobs=60, require='sharedmem')(delayed(parallel_drift)(i) for i in range(img.shape[0]))
+    else:
+        for i in range(img.shape[0]):
+            if drift is None:
+                frame = rangescale(img[i], (0, 255)).astype(np.uint8)  # Making sure its the right format
+                driftcorrimg = cropbox(frame, box)  # crop part of image for matching
+                res = cv2.matchTemplate(driftcorrimg, template, cv2.TM_CCOEFF_NORMED)
+                _, _, _, max_loc = cv2.minMaxLoc(res)  # top left corner
+                ycorr[i] = max_loc[0] - res.shape[1] / 2  #　TODO: why size should over 2 ?
+                xcorr[i] = max_loc[1] - res.shape[0] / 2  #　TODO: why size should over 2 ?
+            T = np.float32([[1, 0, -ycorr[i]],
+                            [0, 1, -xcorr[i]]])  # xcorr: direction for shiftting along y axis
+            img[i] = cv2.warpAffine(img[i], T, img.shape[3:0:-1])
 
     if twoDflag:
         return np.squeeze(img), (xcorr[0], ycorr[0])
@@ -203,9 +219,9 @@ def getChamberBoxes(chambersmask):
         xtl, ytl, boxwidth, boxheight = cv2.boundingRect(chamber)
         chamberboxes.append(dict(
             xtl=xtl,
-            ytl=int(ytl - (boxheight * .01)),  # -10% of height to make sure the top isn't cropped
+            ytl=int(ytl - (boxheight * .08)),  # -10% of height to make sure the top isn't cropped
             xbr=xtl + boxwidth,
-            ybr=int(ytl + boxheight * 1.2)))  # tl = top left, br = bottom right. MODIFY: add more 10% of height
+            ybr=int(ytl + boxheight * 0.5)))  # tl = top left, br = bottom right. MODIFY: add more 10% of height
     chamberboxes.sort(key=lambda elem: elem['xtl'])  # Sorting by top-left X (normally sorted by Y top left)
     return chamberboxes
 
