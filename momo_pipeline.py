@@ -52,7 +52,7 @@ seg_model_file = r'./test_data_set/model/unet_moma_seg_multisets.hdf5'
 min_chamber_area = 3e3
 target_size = (512, 512)
 input_size = target_size + (1,)
-process_size = 120
+process_size = 200
 model_chambers = unet_chambers(input_size=input_size)
 model_chambers.load_weights(model_file)
 target_size_seg = (256, 32)
@@ -228,23 +228,25 @@ class MomoFov:
         num_time = len(self.times)
         sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
         selected_ims = self.phase_ims[sample_index, ...]
-        cells_threshold = 0.258
-        chamber_loaded = []
+        # cells_threshold = 0.258
+
         chamber_graylevel = []
         for box in self.chamberboxes:
             half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl'] / 2 + box['ytl']),
                             box['xtl']:box['xbr']]
             mean_chamber = np.mean(half_chambers)
             chamber_graylevel.append(mean_chamber)
-            if mean_chamber < cells_threshold:
-                chamber_loaded.append(True)
-            else:
-                chamber_loaded.append(False)
+            # if mean_chamber < cells_threshold:
+            #     chamber_loaded.append(True)
+            # else:
+            #     chamber_loaded.append(False)
+        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel)/2
+        chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
         self.chamber_graylevel = chamber_graylevel
         print(chamber_graylevel)
-        print(f'detect chamber loaded: {self.loaded_chamber_name}.')
+        print(f'detect chamber loaded number: {len(self.loaded_chamber_box)}.')
 
     def cell_detection(self):
         # TODO: parallel must be done
