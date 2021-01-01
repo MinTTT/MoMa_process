@@ -80,13 +80,36 @@ ax[1].set_yscale('log')
 ax[1].set_ylim(100, 10000)
 ax[1].set_xlabel('Rfp intensity')
 ax[1].set_ylabel('Gfp intensity')
-
 fig1.show()
+#%%
+cells = np.array(list(set(ff_dfs['chamber'])))
+cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
+fc_list = []
+for cell in cells[cell_ints]:
+    fc_i = ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['red_mean']
+    fc_f = ff_dfs[ff_dfs['chamber'] == cell].iloc[-1]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[-1]['red_mean']
+    fc = fc_i / fc_f
+    fc_list.append(fc)
 
+fc = pd.DataFrame(data=dict(chamber=cells[cell_ints],
+                            fold_change=fc_list))
+
+fig3, ax = plt.subplots(1, 1)
+sns.histplot(data=fc, x='fold_change', bins=100, log_scale=True, ax=ax)
+# ax.set_xlim(0, 10)
+fig3.show()
 
 #%%
-fig2, ax = plt.subplots(1, 1)
-sns.histplot(x=ff_dfs['red_mean'], y=ff_dfs['green_mean'], ax=ax)
+fig2, ax = plt.subplots(1, 1, figsize=(12, 10))
+sns.histplot(x=ff_dfs['red_mean'], y=ff_dfs['green_mean'],
+             log_scale=(True, True),
+             cbar=True,
+             cbar_kws=dict(shrink=.75),
+             pthresh=.1,
+             ax=ax)
+ax.set_xlabel('Rfp intensity (a.u.)')
+ax.set_ylabel('Gfp intensity (a.u.)')
+
 fig2.show()
 
 #%%
