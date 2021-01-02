@@ -13,6 +13,7 @@ import sys
 import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
+
 import time
 # […]
 
@@ -28,7 +29,7 @@ from utils.delta.utilities import getChamberBoxes, getDriftTemplate, driftcorr, 
 from joblib import Parallel, load, dump, delayed
 from utils.delta.utilities import cropbox
 from skimage import io
-from utils.rotation import rotate_fov
+from utils.rotation import rotate_fov, rotate_image
 from utils.signal import vertical_mean
 
 # Allow memory growth for the GPU
@@ -85,8 +86,9 @@ def get_im_time(ps):
         return tim.asarray(), tim.shaped_metadata[0]['time']
 
 
-def get_fluo_channel(ps, drift):
+def get_fluo_channel(ps, drift, angle):
     im, time = get_im_time(ps)
+    im = rotate_image(im, angle)
     im, _ = driftcorr(img=im, template=None, box=None, drift=drift)
     return im, time
 
@@ -132,6 +134,7 @@ class MomoFov:
         self.index_of_loaded_chamber = []
         self.chamber_graylevel = []
         self.chamber_seg = None
+        self.rotation = []
 
     def detect_channels(self, number=0):
         """
@@ -189,21 +192,22 @@ class MomoFov:
         # ---------------------------------------------
         self.phase_ims = np.zeros((len(self.times['phase']),) + self.template_frame.shape)
         self.time_points['phase'] = [False] * len(self.times['phase'])
-
+        self.rotation = [None] * len(self.times['phase'])
         def parallel_input(fn, inx):
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
             if self.chamber_direction == 0:
                 im = im[::-1, :]
-            im, _ = rotate_fov(np.expand_dims(im, axis=0), crop=False)
+            im, angl = rotate_fov(np.expand_dims(im, axis=0), crop=False)
             self.phase_ims[inx, ...] = rangescale(im.squeeze(), (0, 1))
             self.time_points['phase'][inx] = tp
+            self.rotation[inx] = angl
             return None
 
-        _ = Parallel(n_jobs=60, require='sharedmem')(
+        _ = Parallel(n_jobs=64, backend='threading', require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in tqdm(enumerate(self.times['phase'])))
 
-        while False in self.time_points['phase']:
-            time.sleep(1)
+        # while False in self.time_points['phase']:
+        #     time.sleep(1)
 
         print(f'{self.fov_name}: ims shape is {self.phase_ims.shape}.')
         driftcorbox = dict(xtl=0,
@@ -293,7 +297,7 @@ class MomoFov:
                 if time in self.times['green']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     green_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'green', time),
-                                                            drift_valu)
+                                                            drift_valu, self.rotation[inx_t][0])
                     if self.chamber_direction == 0:
                         green_im = green_im[::-1, :]
                     green_channels[time] = [cropbox(green_im, cb) for cb in self.loaded_chamber_box]
@@ -304,7 +308,7 @@ class MomoFov:
                 if time in self.times['red']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     red_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'red', time),
-                                                          drift_valu)
+                                                          drift_valu, self.rotation[inx_t][0])
                     if self.chamber_direction == 0:
                         red_im = red_im[::-1, :]
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
@@ -383,7 +387,8 @@ class MomoFov:
         del self.phase_ims
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
-
+                         frame_rotation_anle=self.rotation,
+                         frame_shift=self.drift_values,
                          times=self.times,
                          time_points=self.time_points,
                          light_channels=self.channels,
@@ -404,17 +409,20 @@ class MomoFov:
 
 
 # %%
-DIR = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
+DIR = r'H:\ZJW_CP\20201227'
 jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
 fov_folder = [folder for folder in os.listdir(DIR)
               if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
 untreated = list(set(fov_folder) - set(jl_file))
+untreated.sort(key=lambda name: int(name.split('_')[-1]))
 fovs_name = [MomoFov(folder, DIR) for folder in untreated]
 
 # _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
 
-for fov in fovs_name:
+for i, fov in enumerate(fovs_name):
+    print(f'Processing {i+1}/{len(fovs_name)}')
     fov.process_flow()
+
 
 # %%
 

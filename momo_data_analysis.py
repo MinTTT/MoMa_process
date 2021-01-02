@@ -6,10 +6,15 @@ from joblib import load
 import os
 from tqdm import tqdm
 import sys
-sys.path.append(r'D:\python_code\data_explore')
-import sciplot as splt
+
 import seaborn as sns
-splt.whitegrid()
+
+sys.path.append(r'D:\python_code\data_explore')
+try:
+    import sciplot as splt
+    splt.whitegrid()
+except ModuleNotFoundError:
+    print('''Module sciplot wasn't founded.''')
 
 
 def convert_time(time):
@@ -20,13 +25,13 @@ def convert_time(time):
 
 
 #%%
-dir = r'X:/chupan/mother machine/20201225_NCM_pECJ3_M5_L3/'
+dir = r'H:\ZJW_CP\20201227'
 
 all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
 dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
 
 for i, df in enumerate(dfs):
-    chamber = [f'fov{i}_{ch}' for ch in df['channel']]
+    chamber = [f'fov{i}_{ch}' for ch in df['chamber']]
     df['chamber'] = chamber
 dfs = pd.concat(dfs)
 dfs.index = pd.Index(range(len(dfs)))
@@ -54,14 +59,14 @@ for cell in cells:
                s=158)
 
 ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.0,
-            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.2)
+            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*1)
 fig2.show()
 
 #%%
 ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
 fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
 cells = list(set(ff_dfs['chamber']))
-cells = np.random.choice(cells, 50)
+cells = np.random.choice(cells, 10)
 for cell in cells:
     ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
                ff_dfs[ff_dfs['chamber'] == cell]['green_mean']/ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '--y')
@@ -113,24 +118,25 @@ ax.set_ylabel('Gfp intensity (a.u.)')
 fig2.show()
 
 #%%
-df = pd.read_csv(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_55_statistic.csv')
+df = pd.read_csv(r'H:\ZJW_CP\20201227\fov_41_statistic.csv')
 df = df[~np.isnan(df['green_mean'])]
-cells = list(set(df['channel']))
-# df = df[df['channel'] == 'ch_0']
+cells = list(set(df['chamber']))
+# df = df[df['chamber'] == 'ch_0']
 
 fig1, ax = plt.subplots(1, 2, figsize=(18, 10))
 for cell in cells:
-    ax[0].plot(df[df['channel'] == cell]['time_s'],
-               df[df['channel'] == cell]['green_mean']/df[df['channel'] == cell]['red_mean'], '--y')
-    # ax[0].plot(df[df['channel'] == cell]['time_s'], df[df['channel'] == cell]['red_mean'], '-r')
+    ax[0].plot(df[df['chamber'] == cell]['time_s'],
+               df[df['chamber'] == cell]['green_mean']/df[df['chamber'] == cell]['red_mean'], '--y')
+    # ax[0].plot(df[df['chamber'] == cell]['time_s'], df[df['chamber'] == cell]['red_mean'], '-r')
 # ax[0].set_ylim(100, 50000)
 ax[0].set_yscale('log')
 
 for cell in cells:
-    ax[1].scatter(df[df['channel'] == cell]['red_mean'], df[df['channel'] == cell]['green_mean'])
+    ax[1].scatter(df[df['chamber'] == cell]['red_mean'], df[df['chamber'] == cell]['green_mean'])
 ax[1].set_xscale('log')
 ax[1].set_xlim(100, 2000)
 ax[1].set_yscale('log')
+
 ax[1].set_ylim(100, 10000)
 
 fig1.show()
