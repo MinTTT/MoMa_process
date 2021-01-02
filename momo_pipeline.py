@@ -283,7 +283,8 @@ class MomoFov:
         red_channels = dict()
 
         for inx_t, time in enumerate(self.times['phase']):
-            """get all fluorescent images from disk and seg into channel XX_channels is a dictionary keys are file 
+            """
+            get all fluorescent images from disk and seg into channel XX_channels is a dictionary keys are file 
             names and their elements are lists containing chambers ordered by loaded chamber in 
             self.loaded_chamber_name. 
             """
@@ -382,6 +383,7 @@ class MomoFov:
         del self.phase_ims
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
+
                          times=self.times,
                          time_points=self.time_points,
                          light_channels=self.channels,

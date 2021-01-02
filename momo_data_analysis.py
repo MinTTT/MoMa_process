@@ -21,7 +21,7 @@ def convert_time(time):
 
 #%%
 dir = r'X:/chupan/mother machine/20201225_NCM_pECJ3_M5_L3/'
-#
+
 all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
 dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
 
@@ -52,7 +52,7 @@ for cell in cells:
     ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
                fd_dfs[fd_dfs['chamber'] == cell]['area'],
                s=158)
-# ax.set_yscale('log')
+
 ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.0,
             fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.2)
 fig2.show()
@@ -96,7 +96,7 @@ fc = pd.DataFrame(data=dict(chamber=cells[cell_ints],
 
 fig3, ax = plt.subplots(1, 1)
 sns.histplot(data=fc, x='fold_change', bins=100, log_scale=True, ax=ax)
-# ax.set_xlim(0, 10)
+
 fig3.show()
 
 #%%
