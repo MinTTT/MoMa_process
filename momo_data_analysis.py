@@ -24,8 +24,8 @@ def convert_time(time):
     return h
 
 
-#%%
-dir = r'H:\ZJW_CP\20201227'
+#%% get all data and filter raw data
+dir = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
 
 all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
 dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
@@ -39,7 +39,7 @@ dfs['time_h'] = [convert_time(s) for s in dfs['time_s']-min(dfs['time_s'])]
 
 fd_dfs = dfs[dfs['area'] > 100]
 print(f'''all chambers {len(list(set(fd_dfs['chamber'])))}''')
-#%%
+#%% show distribution of all cells' size
 fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
 ax.hist(np.log(fd_dfs['area']), bins=100)
 ax.set_xlabel('Cell area (log(pixels))')
@@ -47,50 +47,55 @@ ax.set_ylabel('Number')
 fig1.show()
 #%%
 
-fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
+# fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
 cells = list(set(fd_dfs['chamber']))
 cells = np.random.choice(cells, 3)
 fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
 for cell in cells:
     ax.plot(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
-               fd_dfs[fd_dfs['chamber'] == cell]['area'])
+               fd_dfs[fd_dfs['chamber'] == cell]['area'], '--')
     ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
                fd_dfs[fd_dfs['chamber'] == cell]['area'],
                s=158)
 
-ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.0,
-            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*1)
+ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.65,
+            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h'])*0.95)
+ax.set_xlabel('Time (h)')
+ax.set_ylabel('Cell size (pixels)')
 fig2.show()
 
-#%%
+#%% extract data with fluorescence information
 ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
-fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
+fig1, ax = plt.subplots(1, 2, figsize=(21, 10))
 cells = list(set(ff_dfs['chamber']))
-cells = np.random.choice(cells, 10)
+cells = np.random.choice(cells, 1)
 for cell in cells:
     ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
-               ff_dfs[ff_dfs['chamber'] == cell]['green_mean']/ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '--y')
+               ff_dfs[ff_dfs['chamber'] == cell]['green_mean']/ff_dfs[ff_dfs['chamber'] == cell]['red_mean'])
     # ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'], ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '-r')
 # ax[0].set_ylim(100, 50000)
 ax[0].set_yscale('log')
 ax[0].set_xlim(0)
 ax[0].set_xlabel('Time (h)')
 ax[0].set_ylabel('Fold increase (gfp/rfp)')
+ax[0].grid(False)
 
 for cell in cells:
-    ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'])
+    ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
+                  s=20)
 ax[1].set_xscale('log')
 ax[1].set_xlim(100, 2000)
 ax[1].set_yscale('log')
-ax[1].set_ylim(100, 10000)
+ax[1].set_ylim(100, 1000)
 ax[1].set_xlabel('Rfp intensity')
 ax[1].set_ylabel('Gfp intensity')
+ax[1].grid(False)
 fig1.show()
 #%%
 cells = np.array(list(set(ff_dfs['chamber'])))
 cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
 fc_list = []
-for cell in cells[cell_ints]:
+for cell in tqdm(cells[cell_ints]):
     fc_i = ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['red_mean']
     fc_f = ff_dfs[ff_dfs['chamber'] == cell].iloc[-1]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[-1]['red_mean']
     fc = fc_i / fc_f
