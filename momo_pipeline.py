@@ -409,7 +409,7 @@ class MomoFov:
 
 
 # %%
-DIR = r'H:\ZJW_CP\20201227'
+DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
 jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
 fov_folder = [folder for folder in os.listdir(DIR)
               if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
@@ -422,6 +422,7 @@ fovs_name = [MomoFov(folder, DIR) for folder in untreated]
 for i, fov in enumerate(fovs_name):
     print(f'Processing {i+1}/{len(fovs_name)}')
     fov.process_flow()
+    del fovs_name[i]
 
 
 # %%
