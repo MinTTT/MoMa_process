@@ -4,7 +4,7 @@
 # Ignore bytecode:
 __pycache__
 *.pyc
-
+.test_data_set/test_data
 # Ignore debugging file:
 debugging.py
 
