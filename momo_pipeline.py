@@ -108,6 +108,10 @@ def parallel_seg_input(ims, box, size=(256, 32)):
 
 class MomoFov:
     def __init__(self, name, dir):
+        """
+        :param name: str, fov name eg. 'fov_0'
+        :param dir: str, path of fovs
+        """
         self.fov_name = name
         self.dir = dir
         self.cell_minisize = 100
@@ -124,7 +128,7 @@ class MomoFov:
         self.drift_values = None
         self.cell_mask = None  # NOTE: cell_mask have a order which is dependent on times. i.e. #chan_1 ---times----
         # #chan_2 --- times---
-        self.chamber_cells_mask = dict()
+        self.chamber_cells_mask = dict()  # resized cells mask
         self.chamber_cells_contour = dict()
         self.loaded_chamber_name = []
         self.chamber_red_ims = dict()
@@ -384,7 +388,7 @@ class MomoFov:
         print(f"Now, {self.fov_name}: get mother cells data.\n")
         self.parse_mother_cell_data()
         self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
-        del self.phase_ims
+        self.phase_ims = None  # delete phase images
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
                          frame_rotation_anle=self.rotation,
@@ -408,42 +412,63 @@ class MomoFov:
         return None
 
 
+def get_fovs_zname(dir, all_fov=False):
+    """
+    Get fovs name under dir, if fovs in dir have been treated (i.e. having a memory obj in folder dir), these fovs will
+    not return.
+    :param dir: str, ps
+    :param all_fov: bool, if True, return all folders, default, False.
+    :return: list
+    """
+    DIR = dir
+    jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
+    fov_folder = [folder for folder in os.listdir(DIR)
+                  if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
+    if all_fov == False:
+        untreated = list(set(fov_folder) - set(jl_file))
+        untreated.sort(key=lambda name: int(name.split('_')[-1]))
+        fovs_name = [MomoFov(folder, DIR) for folder in untreated]
+        return fovs_name
+    else:
+        fov_folder.sort(key=lambda name: int(name.split('_')[-1]))
+        return fov_folder
+
 # %%
-DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
-jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
-fov_folder = [folder for folder in os.listdir(DIR)
-              if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
-untreated = list(set(fov_folder) - set(jl_file))
-untreated.sort(key=lambda name: int(name.split('_')[-1]))
-fovs_name = [MomoFov(folder, DIR) for folder in untreated]
+if __name__ == '__main__':
+    DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+    jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
+    fov_folder = [folder for folder in os.listdir(DIR)
+                  if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
+    untreated = list(set(fov_folder) - set(jl_file))
+    untreated.sort(key=lambda name: int(name.split('_')[-1]))
+    fovs_name = [MomoFov(folder, DIR) for folder in untreated]
 
-# _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
+    # _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
 
-for i, fov in enumerate(fovs_name):
-    print(f'Processing {i+1}/{len(fovs_name)}')
-    fov.process_flow()
-    del fovs_name[i]
-
-
-# %%
-
-jldb = load(os.path.join(DIR, 'fov_90.jl'))
+    for i, fov in enumerate(fovs_name):
+        print(f'Processing {i+1}/{len(fovs_name)}')
+        fov.process_flow()
+        del fovs_name[i]
 
 # %%
-print(jldb.loaded_chamber_name)
-fig1, ax = plt.subplots(1, 1)
-im = jldb.chamber_cells_mask['ch_8'][18]
-print(np.mean(im))
-ax.imshow(im)
-fig1.show()
-# %%
-
-num_time = len(fov.time_points)
-sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
-selected_ims = jldb.phase_ims[sample_index, ...]
-cells_threshold = 0.30
-chamber_loaded = []
-for box in jldb.chamberboxes:
-    half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl'] / 2 + box['ytl']), box['xtl']:box['xbr']]
-    mean_chamber = np.mean(half_chambers)
-    print(mean_chamber)
+#
+# jldb = load(os.path.join(DIR, 'fov_90.jl'))
+#
+# # %%
+# print(jldb.loaded_chamber_name)
+# fig1, ax = plt.subplots(1, 1)
+# im = jldb.chamber_cells_mask['ch_8'][18]
+# print(np.mean(im))
+# ax.imshow(im)
+# fig1.show()
+# # %%
+#
+# num_time = len(fov.time_points)
+# sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
+# selected_ims = jldb.phase_ims[sample_index, ...]
+# cells_threshold = 0.30
+# chamber_loaded = []
+# for box in jldb.chamberboxes:
+#     half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl'] / 2 + box['ytl']), box['xtl']:box['xbr']]
+#     mean_chamber = np.mean(half_chambers)
+#     print(mean_chamber)
