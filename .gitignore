@@ -1,5 +1,6 @@
 # Ignore hdf5 files:
 *.hdf5
+# igmeore IDE files
 .idea
 # Ignore bytecode:
 __pycache__

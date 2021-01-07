@@ -75,8 +75,8 @@ def get_times(dir, name, channels):
     return tim_dict
 
 
-def back_corrt(im: np.ndarray, bac: float) -> np.ndarray:
-    im -= bac
+def back_corrt(im: np.ndarray) -> np.ndarray:
+    im -= int(np.median(im))
     im[im < 0] = 0.
     return im
 
@@ -302,6 +302,7 @@ class MomoFov:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     green_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'green', time),
                                                             drift_valu, self.rotation[inx_t][0])
+                    green_im = back_corrt(green_im.astype(np.float64))  # fluorescence background correct
                     if self.chamber_direction == 0:
                         green_im = green_im[::-1, :]
                     green_channels[time] = [cropbox(green_im, cb) for cb in self.loaded_chamber_box]
@@ -313,6 +314,7 @@ class MomoFov:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     red_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'red', time),
                                                           drift_valu, self.rotation[inx_t][0])
+                    red_im = back_corrt(red_im.astype(np.float64))
                     if self.chamber_direction == 0:
                         red_im = red_im[::-1, :]
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
@@ -335,18 +337,18 @@ class MomoFov:
                     )
                     if time in self.times['green']:
                         green_channel_im = green_channels[time][cha_name_inx]
-                        # green_chamber_back_mean = np.mean(green_channel_im[np.logical_not(
-                        #     self.chamber_cells_mask[chambername][tm_inx])])  # green background
-                        # green_channel_im = back_corrt(green_channel_im.astype(np.float64),
-                        #                                float(green_chamber_back_mean))
-                        cell_pars['green_mean'] = cv2.mean(green_channel_im, cell_mask)[0]
+                        green_pixels = green_channel_im[cell_mask == 255]
+                        # cell_pars['green_mean'] = cv2.mean(green_channel_im, cell_mask)[0]
+                        cell_pars['green_mean'] = np.mean(green_pixels)
+                        # medium only consider the medium of the brightest 10% pixels.
+                        cell_pars['green_medium'] = np.quantile(green_pixels, 0.95)
                     if time in self.times['red']:
                         red_channel_im = red_channels[time][cha_name_inx]
-                        # red_chamber_back_mean = np.mean(red_channel_im[np.logical_not(
-                        #     self.chamber_cells_mask[chambername][tm_inx])])  # green background
-                        # red_channel_im = back_corrt(red_channel_im.astype(np.float64),
-                        #                             float(red_chamber_back_mean))
-                        cell_pars['red_mean'] = cv2.mean(red_channel_im, cell_mask)[0]
+                        red_pixels = red_channel_im[cell_mask == 255]
+                        # cell_pars['red_mean'] = cv2.mean(red_channel_im, cell_mask)[0]
+                        cell_pars['red_mean'] = np.mean(red_pixels)
+                        # medium only consider the medium of the brightest 10% pixels.
+                        cell_pars['red_medium'] = np.quantile(red_pixels, 0.95)
                     self.mother_cell_pars[chambername].append(cell_pars)
         # This section was used to segment the single chamber frame along time.
         if 'green' in self.channels:
@@ -412,10 +414,10 @@ class MomoFov:
         return None
 
 
-def get_fovs_zname(dir, all_fov=False):
+def get_fovs_name(dir, all_fov=False):
     """
     Get fovs name under dir, if fovs in dir have been treated (i.e. having a memory obj in folder dir), these fovs will
-    not return.
+    not returned.
     :param dir: str, ps
     :param all_fov: bool, if True, return all folders, default, False.
     :return: list
