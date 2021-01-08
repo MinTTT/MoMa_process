@@ -26,7 +26,7 @@ def convert_time(time):
 
 
 # %% get all data and filter raw data
-dir = r'test_data_set/test_data'
+dir = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
 
 all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
 dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
@@ -85,16 +85,16 @@ for cell in cells:
     ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
                   s=20)
 ax[1].set_xscale('log')
-ax[1].set_xlim(10, 2000)
+ax[1].set_xlim(100, 2000)
 ax[1].set_yscale('log')
-ax[1].set_ylim(10, 1000)
+ax[1].set_ylim(100, 15000)
 ax[1].set_xlabel('Rfp intensity')
 ax[1].set_ylabel('Gfp intensity')
 ax[1].grid(False)
 fig1.show()
 # %%
 cells = np.array(list(set(ff_dfs['chamber'])))
-cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
+cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 10 else False for cell in cells]
 fc_list = []
 for cell in tqdm(cells[cell_ints]):
     fc_i = ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[0][

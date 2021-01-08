@@ -131,7 +131,7 @@ def parallel_seg_input(ims, box, size=(256, 32)):
     subims = ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
     ims_num = len(subims)
     resize_ims = np.empty((ims_num,) + size)
-    _ = Parallel(n_jobs=60, require='sharedmem')(delayed(resize_map)(i, size) for i in range(ims_num))
+    _ = Parallel(n_jobs=30, require='sharedmem')(delayed(resize_map)(i, size) for i in range(ims_num))
     return resize_ims
 
 
@@ -237,7 +237,7 @@ class MomoFov:
             self.rotation[inx] = angl
             return None
 
-        _ = Parallel(n_jobs=64, backend='threading', require='sharedmem')(
+        _ = Parallel(n_jobs=30, require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in tqdm(enumerate(self.times['phase'])))
 
         # while False in self.time_points['phase']:
@@ -481,7 +481,7 @@ def get_fovs_name(dir, all_fov=False):
 
 # %%
 if __name__ == '__main__':
-    DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+    DIR = r'X:\chupan\mother machine\20201221_NH2_PECJ3'
     jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
     fov_folder = [folder for folder in os.listdir(DIR)
                   if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
