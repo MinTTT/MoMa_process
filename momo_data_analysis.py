@@ -26,7 +26,7 @@ def convert_time(time):
 
 
 # %% get all data and filter raw data
-dir = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
+dir = r'test_data_set/test_data'
 
 all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
 dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
@@ -85,9 +85,9 @@ for cell in cells:
     ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
                   s=20)
 ax[1].set_xscale('log')
-ax[1].set_xlim(100, 2000)
+ax[1].set_xlim(10, 2000)
 ax[1].set_yscale('log')
-ax[1].set_ylim(100, 1000)
+ax[1].set_ylim(10, 1000)
 ax[1].set_xlabel('Rfp intensity')
 ax[1].set_ylabel('Gfp intensity')
 ax[1].grid(False)

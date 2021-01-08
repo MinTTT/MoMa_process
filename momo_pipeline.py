@@ -31,6 +31,10 @@ from utils.delta.utilities import cropbox
 from skimage import io
 from utils.rotation import rotate_fov, rotate_image
 from utils.signal import vertical_mean
+import dask
+from dask.distributed import Client, progress
+from dask.diagnostics import ProgressBar
+client = Client(threads_per_worker=10, n_workers=1)
 
 # Allow memory growth for the GPU
 # physical_devices = tf.config.experimental.list_physical_devices('GPU')
@@ -75,6 +79,31 @@ def get_times(dir, name, channels):
     return tim_dict
 
 
+def crop(imgs, box):
+    '''
+    Crop images
+
+    Parameters
+    ----------
+    img : 2D numpy array [t, x, y]
+        Image to crop.
+    box : Dictionary
+        Dictionary describing the box to cut out, containing the following
+        elements:
+            - 'xtl': Top-left corner X coordinate.
+            - 'ytl': Top-left corner Y coordinate.
+            - 'xbr': Bottom-right corner X coordinate.
+            - 'ybr': Bottom-right corner Y coordinate.
+
+    Returns
+    -------
+    2D numpy array
+        Cropped-out region.
+
+    '''
+    return img[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
+
+
 def back_corrt(im: np.ndarray) -> np.ndarray:
     im -= int(np.median(im))
     im[im < 0] = 0.
@@ -91,7 +120,6 @@ def get_fluo_channel(ps, drift, angle):
     im = rotate_image(im, angle)
     im, _ = driftcorr(img=im, template=None, box=None, drift=drift)
     return im, time
-
 
 
 def parallel_seg_input(ims, box, size=(256, 32)):
@@ -197,6 +225,7 @@ class MomoFov:
         self.phase_ims = np.zeros((len(self.times['phase']),) + self.template_frame.shape)
         self.time_points['phase'] = [False] * len(self.times['phase'])
         self.rotation = [None] * len(self.times['phase'])
+
         def parallel_input(fn, inx):
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
             if self.chamber_direction == 0:
@@ -244,7 +273,7 @@ class MomoFov:
             #     chamber_loaded.append(True)
             # else:
             #     chamber_loaded.append(False)
-        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel)*0.6
+        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.6
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
@@ -289,15 +318,18 @@ class MomoFov:
     def extract_mother_cells_features(self):
         green_channels = dict()
         red_channels = dict()
+        green_time_points = dict()
+        red_time_points = dict()
 
-        for inx_t, time in enumerate(self.times['phase']):
+
+        # for inx_t, time in enumerate(self.times['phase']):
+        def parallel_flur_seg(inx_t, time):
             """
             get all fluorescent images from disk and seg into channel XX_channels is a dictionary keys are file 
             names and their elements are lists containing chambers ordered by loaded chamber in 
             self.loaded_chamber_name. 
             """
             if 'green' in self.channels:
-                green_time_points = []
                 if time in self.times['green']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     green_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'green', time),
@@ -306,10 +338,10 @@ class MomoFov:
                     if self.chamber_direction == 0:
                         green_im = green_im[::-1, :]
                     green_channels[time] = [cropbox(green_im, cb) for cb in self.loaded_chamber_box]
-                    green_time_points.append(time_point)
-                self.time_points['green'] = green_time_points
+                    green_time_points[time] = time_point
+
+
             if 'red' in self.channels:
-                red_time_points = []
                 if time in self.times['red']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     red_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'red', time),
@@ -318,8 +350,17 @@ class MomoFov:
                     if self.chamber_direction == 0:
                         red_im = red_im[::-1, :]
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
-                    red_time_points.append(time_point)
-                self.time_points['red'] = red_time_points
+                    red_time_points[time] = time_point
+            return time
+
+        parall_results = [dask.delayed(parallel_flur_seg)(inx_t, time) for inx_t, time in
+                          enumerate(self.times['phase'])]
+        print(f'Now, {self.fov_name}: loading fluorescent images.')
+        with ProgressBar():
+            _ = dask.compute(*parall_results, scheduler='threads')
+
+        self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
+        self.time_points['red'] = [red_time_points[i] for i in self.times['red']]
 
         for cha_name_inx, chambername in enumerate(self.loaded_chamber_name):
             self.mother_cell_pars[chambername] = []
@@ -385,6 +426,7 @@ class MomoFov:
         self.detect_frameshift()
         print(f'Now, {self.fov_name}: detect cells.\n')
         self.cell_detection()
+
         print(f"Now, {self.fov_name}: extract cells' features.\n")
         self.extract_mother_cells_features()
         print(f"Now, {self.fov_name}: get mother cells data.\n")
@@ -435,6 +477,7 @@ def get_fovs_name(dir, all_fov=False):
         fov_folder.sort(key=lambda name: int(name.split('_')[-1]))
         return fov_folder
 
+
 # %%
 if __name__ == '__main__':
     DIR = r'H:\ZJW_CP\20201227'
@@ -448,9 +491,8 @@ if __name__ == '__main__':
     # _ = Parallel(n_jobs=10, backend='threading')(delayed(parallel_process)(fov) for fov in range(len(fovs_name)))
 
     for i, fov in enumerate(fovs_name):
-        print(f'Processing {i+1}/{len(fovs_name)}')
+        print(f'Processing {i + 1}/{len(fovs_name)}')
         fov.process_flow()
-
 
 # %%
 #

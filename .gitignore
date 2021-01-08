@@ -8,4 +8,4 @@ __pycache__
 .test_data_set/test_data
 # Ignore debugging file:
 debugging.py
-
+dask-worker-space
