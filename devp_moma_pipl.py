@@ -20,19 +20,50 @@ import momo_pipeline as mp
 from utils.delta.utilities import cropbox
 from matplotlib import pylab
 import cv2
-import dask
-from dask.distributed import Client, progress
-from dask.diagnostics import ProgressBar
+import asyncio
 
-client = Client(threads_per_worker=64, n_workers=1)
-client
+
+# import dask
+# # from dask.distributed import Client, progress
+# # from dask.diagnostics import ProgressBar
+
+async def asy_process(fov):
+    print(f'Now, {fov.fov_name}: detect channels.\n')
+    fov.detect_channels()
+    print(f'Now, {fov.fov_name}: detect frameshift.\n')
+    fov.detect_frameshift()
+    print(f'Now, {fov.fov_name}: detect cells.\n')
+    fov.cell_detection()
+    print(f"Now, {fov.fov_name}: extract cells' features.\n")
+    fov.extract_mother_cells_features()
+    print(f"Now, {fov.fov_name}: get mother cells data.\n")
+    fov.parse_mother_cell_data()
+    return None
+
+
+async def asy_dump(fov):
+    fov.dump_data()
+    del fov
+
+async def asy_pip(fov1, fov2):
+    if fov1:
+        await asy_dump(fov1)
+    if fov2:
+        await asy_process(fov2)
+
 # %%
 DIR = r'./test_data_set/test_data'
 
 fovs_name = mp.get_fovs_name(DIR)
+
 # for i, fov in enumerate(fovs_name):
 #     print(f'Processing {i + 1}/{len(fovs_name)}')
 #     fov.process_flow()
+fovs_name = [None] + fovs_name + [None]
+
+for i in range(len(fovs_name)-1):
+    asyncio.run(asy_pip(fovs_name[i], fovs_name[i+1]))
+
 # %%
 fov1 = fovs_name[0]
 fov1.detect_channels()
@@ -40,26 +71,57 @@ fov1.detect_frameshift()
 fov1.cell_detection()
 fov1.extract_mother_cells_features()
 fov1.parse_mother_cell_data()
-#%%
+# %%
+import asyncio
+
+
+async def main():
+    print('Hello ...')
+    await asyncio.sleep(2)
+    print('... World!')
+
+
+# Python 3.7+
+asyncio.run(main())
+print('2')
 
 
 # %%
 
-time, ch = 0, 5
+def to_BGR(im):
+    return cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+
+
+time, ch = (0, 8), 5
 
 ch_na = fov1.loaded_chamber_name[ch]
 ch_index = fov1.index_of_loaded_chamber[ch]
+if not isinstance(time, int):
+    time = slice(*time)
+    im = tiff.imread([os.path.join(fov1.dir, fov1.fov_name, 'phase', name) for name in fov1.times['phase'][time]])
+else:
+    im = tiff.imread([os.path.join(fov1.dir, fov1.fov_name, 'phase', fov1.times['phase'][time])])
+    np.expand_dims(im, axis=0)
 
-im = tiff.imread(os.path.join(fov1.dir, fov1.fov_name, 'phase', fov1.times['phase'][time]))
 if fov1.chamber_direction == 0:
-    im = im[::-1, ...]
+    im = im[:, ::-1, :]
 channel_box = fov1.chamberboxes[ch_index]
-channel_im = cropbox(im, channel_box)
+channel_im = mp.crop_images(im, channel_box)
+# channel_im = [cv2.cvtColor(channel_im[i, ...], cv2.COLOR_GRAY2BGR) for i in range(len(channel_im))]
 
 cell_cuntour = fov1.chamber_cells_contour[ch_na][time]
-cell_contour_im = cv2.drawContours(channel_im, cell_cuntour, -1, 255, 3)
+# channel_im_bgr = cv2.cvtColor(channel_im, cv2.CV_)
+if not isinstance(time, int):
+    ims_with_cnt = []
+    for i, cts in enumerate(cell_cuntour):
+        ims_with_cnt.append(
+            cv2.drawContours(to_BGR(mp.rangescale(channel_im[i], (0, 255)).astype(np.uint8)), cts, -1, (247, 220, 111),
+                             1))
+    ims_with_cnt = np.concatenate(ims_with_cnt, axis=1)
+else:
+    ims_with_cnt = cv2.drawContours(mp.rangescale(channel_im, (0, 255)).astype(np.uint8), cell_cuntour, -1, 255, 1)
 
-pylab.imshow(channel_im)
+pylab.imshow(ims_with_cnt)
 pylab.show()
 
 # %%

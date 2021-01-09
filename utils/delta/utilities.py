@@ -173,7 +173,7 @@ def driftcorr(img, template=None, box=None, drift=None, parallel=True):
 
 
     if parallel:
-        _ = Parallel(n_jobs=60, require='sharedmem')(delayed(parallel_drift)(i) for i in range(img.shape[0]))
+        _ = Parallel(n_jobs=32, require='sharedmem')(delayed(parallel_drift)(i) for i in range(img.shape[0]))
     else:
         for i in range(img.shape[0]):
             if drift is None:
