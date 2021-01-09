@@ -57,7 +57,10 @@ async def asy_dump(fov):
         del fov
 
 async def asy_pip(fov1, fov2):
-    await asyncio.gather(asy_dump(fov1), asy_process(fov2))
+    tsk1 = asyncio.create_task(asy_dump(fov1))
+    tsk2 = asyncio.create_task(asy_process(fov2))
+    await tsk1
+    await tsk2
 
 
 
@@ -96,18 +99,7 @@ fov1.cell_detection()
 fov1.extract_mother_cells_features()
 fov1.parse_mother_cell_data()
 # %%
-import asyncio
 
-
-async def main():
-    print('Hello ...')
-    await asyncio.sleep(2)
-    print('... World!')
-
-
-# Python 3.7+
-asyncio.run(main())
-print('2')
 
 
 # %%

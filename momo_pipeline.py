@@ -429,7 +429,7 @@ class MomoFov:
         self.dataframe_mother_cells.index = pd.Index(range(len(self.dataframe_mother_cells)))
         return None
 
-    def dump_data(self):
+    def dump_data(self, compress=True):
         self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
@@ -451,7 +451,8 @@ class MomoFov:
                          mother_cells_parameters=self.mother_cell_pars,
                          mother_cells_dataframe=self.dataframe_mother_cells
                          )
-        dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lzma')
+        if compress:
+            dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lz4')
         return None
 
     def process_flow(self):
