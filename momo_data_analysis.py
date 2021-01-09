@@ -69,7 +69,7 @@ fig2.show()
 ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
 fig1, ax = plt.subplots(1, 2, figsize=(21, 10))
 cells = list(set(ff_dfs['chamber']))
-cells = np.random.choice(cells, 1)
+cells = np.random.choice(cells, 5)
 for cell in cells:
     ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
                ff_dfs[ff_dfs['chamber'] == cell]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell]['red_mean'])

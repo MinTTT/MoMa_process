@@ -326,6 +326,8 @@ class MomoFov:
         green_time_points = dict()
         red_time_points = dict()
 
+
+        # for inx_t, time in enumerate(self.times['phase']):
         def parallel_flur_seg(inx_t, time):
             """
             get all fluorescent images from disk and seg into channel XX_channels is a dictionary keys are file 
@@ -342,6 +344,7 @@ class MomoFov:
                         green_im = green_im[::-1, :]
                     green_channels[time] = [cropbox(green_im, cb) for cb in self.loaded_chamber_box]
                     green_time_points[time] = time_point
+
 
             if 'red' in self.channels:
                 if time in self.times['red']:
@@ -491,7 +494,7 @@ def get_fovs_name(dir, all_fov=False):
 
 # %%
 if __name__ == '__main__':
-    DIR = r'X:\chupan\mother machine\20201221_NH2_PECJ3'
+    DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
 
     untreated = get_fovs_name(DIR)
 

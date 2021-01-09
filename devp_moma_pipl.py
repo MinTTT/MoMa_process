@@ -23,9 +23,16 @@ import cv2
 import asyncio
 
 
-# import dask
-# # from dask.distributed import Client, progress
-# # from dask.diagnostics import ProgressBar
+import dask
+
+from dask.diagnostics import ProgressBar
+
+def convert_time(time):
+    h, s = divmod(time, 60 * 60)
+    m, s = divmod(s, 60)
+    h = h + m / 60 + s / 3600
+    return h
+
 
 async def asy_process(fov):
     print(f'Now, {fov.fov_name}: detect channels.\n')
@@ -42,7 +49,9 @@ async def asy_process(fov):
 
 
 async def asy_dump(fov):
+    print(f"Now, {fov.fov_name}: dump memory data.\n")
     fov.dump_data()
+    print(f"{fov.fov_name} finished dump data.\n")
     del fov
 
 async def asy_pip(fov1, fov2):
@@ -51,8 +60,11 @@ async def asy_pip(fov1, fov2):
     if fov2:
         await asy_process(fov2)
 
+
+def paral_read_csv(ps):
+    return pd.read_csv(os.path.join(DIR, ps))
 # %%
-DIR = r'./test_data_set/test_data'
+DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
 
 fovs_name = mp.get_fovs_name(DIR)
 
@@ -63,6 +75,18 @@ fovs_name = [None] + fovs_name + [None]
 
 for i in range(len(fovs_name)-1):
     asyncio.run(asy_pip(fovs_name[i], fovs_name[i+1]))
+
+all_scv = [file for file in os.listdir(DIR) if file.split('.')[-1] == 'csv']
+dfs = [dask.delayed(paral_read_csv)(ps) for ps in all_scv]
+with ProgressBar():
+    dfs = dask.compute(*dfs)
+
+dfs = pd.concat(dfs)
+dfs.index = pd.Index(range(len(dfs)))
+dfs['time_h'] = [convert_time(s) for s in dfs['time_s'] - min(dfs['time_s'])]
+
+fd_dfs = dfs[dfs['area'] > 100]
+print(f'''all chambers {len(list(set(fd_dfs['chamber'])))}''')
 
 # %%
 fov1 = fovs_name[0]
