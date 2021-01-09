@@ -35,36 +35,36 @@ def convert_time(time):
 
 
 async def asy_process(fov):
-    print(f'Now, {fov.fov_name}: detect channels.\n')
-    fov.detect_channels()
-    print(f'Now, {fov.fov_name}: detect frameshift.\n')
-    fov.detect_frameshift()
-    print(f'Now, {fov.fov_name}: detect cells.\n')
-    fov.cell_detection()
-    print(f"Now, {fov.fov_name}: extract cells' features.\n")
-    fov.extract_mother_cells_features()
-    print(f"Now, {fov.fov_name}: get mother cells data.\n")
-    fov.parse_mother_cell_data()
+    if fov:
+        print(f'Now, {fov.fov_name}: detect channels.\n')
+        fov.detect_channels()
+        print(f'Now, {fov.fov_name}: detect frameshift.\n')
+        fov.detect_frameshift()
+        print(f'Now, {fov.fov_name}: detect cells.\n')
+        fov.cell_detection()
+        print(f"Now, {fov.fov_name}: extract cells' features.\n")
+        fov.extract_mother_cells_features()
+        print(f"Now, {fov.fov_name}: get mother cells data.\n")
+        fov.parse_mother_cell_data()
     return None
 
 
 async def asy_dump(fov):
-    print(f"Now, {fov.fov_name}: dump memory data.\n")
-    fov.dump_data()
-    print(f"{fov.fov_name} finished dump data.\n")
-    del fov
+    if fov:
+        print(f"Now, {fov.fov_name}: dump memory data.\n")
+        fov.dump_data()
+        print(f"{fov.fov_name} finished dump data.\n")
+        del fov
 
 async def asy_pip(fov1, fov2):
-    if fov1:
-        await asy_dump(fov1)
-    if fov2:
-        await asy_process(fov2)
+    await asyncio.gather(asy_dump(fov1), asy_process(fov2))
+
 
 
 def paral_read_csv(ps):
     return pd.read_csv(os.path.join(DIR, ps))
 # %%
-DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+DIR = r'./test_data_set/test_data'
 
 fovs_name = mp.get_fovs_name(DIR)
 
@@ -87,7 +87,7 @@ dfs['time_h'] = [convert_time(s) for s in dfs['time_s'] - min(dfs['time_s'])]
 
 fd_dfs = dfs[dfs['area'] > 100]
 print(f'''all chambers {len(list(set(fd_dfs['chamber'])))}''')
-
+fd_dfs.to_csv(os.path.join(DIR, 'all_data.csv'))
 # %%
 fov1 = fovs_name[0]
 fov1.detect_channels()
