@@ -37,7 +37,7 @@ import dask
 from dask.distributed import Client, progress
 from dask.diagnostics import ProgressBar
 
-client = Client(threads_per_worker=64, n_workers=2)
+client = Client(threads_per_worker=64, n_workers=32)
 
 # Allow memory growth for the GPU
 # physical_devices = tf.config.experimental.list_physical_devices('GPU')
@@ -284,7 +284,7 @@ class MomoFov:
                 seg_inputs += (sub_inputs,)
                 self.chamber_phase_ims[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_chn_imgs
         seg_inputs = np.concatenate(seg_inputs, axis=0)
-        self.phase_ims = None  # release memory
+        del self.phase_ims  # release memory
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
         self.chamber_seg = seg_inputs
         # Format into 4D tensor

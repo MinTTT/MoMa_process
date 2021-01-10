@@ -67,24 +67,27 @@ async def asy_pip(fov1, fov2):
 def paral_read_csv(ps):
     return pd.read_csv(os.path.join(DIR, ps))
 # %%
-DIR = r'./test_data_set/test_data'
+DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
 
 fovs_name = mp.get_fovs_name(DIR)
 
-# for i, fov in enumerate(fovs_name):
-#     print(f'Processing {i + 1}/{len(fovs_name)}')
-#     fov.process_flow()
-fovs_name = [None] + fovs_name + [None]
+for i, fov in enumerate(fovs_name):
+    print(f'Processing {i + 1}/{len(fovs_name)}')
+    fov.process_flow()
+    del fovs_name[i]
 
-for i in range(len(fovs_name)-1):
-    asyncio.run(asy_pip(fovs_name[i], fovs_name[i+1]))
+# fovs_name = [None] + fovs_name + [None]
+# for i in range(len(fovs_name)-1):
+#     asyncio.run(asy_pip(fovs_name[i], fovs_name[i+1]))
+#     del fovs_name[i]
 
 all_scv = [file for file in os.listdir(DIR) if file.split('.')[-1] == 'csv']
-dfs = [dask.delayed(paral_read_csv)(ps) for ps in all_scv]
-with ProgressBar():
-    dfs = dask.compute(*dfs)
+all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv]
 
-dfs = pd.concat(dfs)
+with ProgressBar():
+    al_df = dask.compute(*all_scv, scheduler='threads')
+
+dfs = pd.concat(al_df)
 dfs.index = pd.Index(range(len(dfs)))
 dfs['time_h'] = [convert_time(s) for s in dfs['time_s'] - min(dfs['time_s'])]
 
