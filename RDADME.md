@@ -7,4 +7,4 @@ tensorflow2-gpu
 ```
 
 ### Remote deployment
-> F14 Jin 127.20.114.191:2666
+> F14 Jin 172.20.114.191:2666

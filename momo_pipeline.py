@@ -118,10 +118,13 @@ def get_im_time(ps):
         return tim.asarray(), tim.shaped_metadata[0]['time']
 
 
-def get_fluo_channel(ps, drift, angle):
+def get_fluo_channel(ps, drift, angle, direct):
     im, time = get_im_time(ps)
     im = rotate_image(im, angle)
-    im, _ = driftcorr(img=im, template=None, box=None, drift=drift)
+    if direct:
+        im, _ = driftcorr(img=im, template=None, box=None, drift=drift)
+    else:
+        im, _ = driftcorr(img=im[::-1, :], template=None, box=None, drift=drift)
     return im, time
 
 
@@ -183,6 +186,7 @@ class MomoFov:
     def detect_channels(self, number=0):
         """
         The frame number used to detect side_channels. default is 0
+        images inputted and rotated than vertical flip if needed, than detect the fame shift
         :param number: int,
         :return:
         """
@@ -207,6 +211,8 @@ class MomoFov:
                              ybr=max(self.chamberboxes, key=lambda elem: elem['ybr'])['ybr'] + border
                              )
         v_m = vertical_mean(cropbox(self.template_frame, chambercorbox))
+
+        # image vertical flip if chamber out let in the upside.
         if np.mean(v_m[0:(len(v_m) // 2)]) >= np.mean(v_m[(len(v_m) // 2):]):
             self.chamber_direction = 0
             self.chambermask = chambermask[::-1, :]
@@ -338,22 +344,19 @@ class MomoFov:
                 if time in self.times['green']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     green_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'green', time),
-                                                            drift_valu, self.rotation[inx_t][0])
+                                                            drift_valu, self.rotation[inx_t][0],
+                                                            self.chamber_direction)
                     green_im = back_corrt(green_im.astype(np.float64))  # fluorescence background correct
-                    if self.chamber_direction == 0:
-                        green_im = green_im[::-1, :]
                     green_channels[time] = [cropbox(green_im, cb) for cb in self.loaded_chamber_box]
                     green_time_points[time] = time_point
-
 
             if 'red' in self.channels:
                 if time in self.times['red']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
                     red_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'red', time),
-                                                          drift_valu, self.rotation[inx_t][0])
+                                                          drift_valu, self.rotation[inx_t][0],
+                                                          self.chamber_direction)
                     red_im = back_corrt(red_im.astype(np.float64))
-                    if self.chamber_direction == 0:
-                        red_im = red_im[::-1, :]
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
                     red_time_points[time] = time_point
             return time
