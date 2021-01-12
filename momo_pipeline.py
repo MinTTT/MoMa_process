@@ -20,16 +20,15 @@ import time
 # […]
 
 # Own modules
-from utils.delta.data import saveResult_seg, predictGenerator_seg, postprocess
+from utils.delta.data import postprocess
 from utils.delta.model import unet_chambers, unet_seg
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import tensorflow as tf
 import cv2
 import tifffile as tif
 from utils.delta.utilities import getChamberBoxes, getDriftTemplate, driftcorr, rangescale, cropbox
-from joblib import Parallel, load, dump, delayed
-from utils.delta.utilities import cropbox
+from joblib import Parallel, dump, delayed
 from utils.rotation import rotate_fov, rotate_image
 from utils.signal import vertical_mean
 import dask
@@ -37,7 +36,7 @@ import dask
 from dask.distributed import Client, progress
 from dask.diagnostics import ProgressBar
 
-client = Client(threads_per_worker=64, n_workers=32)
+client = Client(threads_per_worker=64, n_workers=8)
 
 # Allow memory growth for the GPU
 # physical_devices = tf.config.experimental.list_physical_devices('GPU')
@@ -236,9 +235,9 @@ class MomoFov:
 
         def parallel_input(fn, inx):
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
-            if self.chamber_direction == 0:
-                im = im[::-1, :]
             im, angl = rotate_fov(np.expand_dims(im, axis=0), crop=False)
+            if self.chamber_direction == 0:
+                im = im[:, ::-1, :]
             self.phase_ims[inx, ...] = rangescale(im.squeeze(), (0, 1))
             self.time_points['phase'][inx] = tp
             self.rotation[inx] = angl
@@ -298,7 +297,7 @@ class MomoFov:
         seg = model_seg.predict(seg_inputs, verbose=1)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
 
-        # -------------- reform the size-------------- TODO: parallel 1
+        # -------------- reform the size-------------- -----
         def parallel_rearange_mask(t, chn):
             frame_index = t + chn * len(self.times['phase'])
             ori_frames[t] = cv2.resize(self.cell_mask[frame_index], ori_frames.shape[2:0:-1])
@@ -309,9 +308,6 @@ class MomoFov:
 
             rerange_mask = [dask.delayed(parallel_rearange_mask)(t, m) for t in range(len(self.times['phase']))]
             _ = dask.compute(*rerange_mask, scheduler='threads')
-            # for t in range(len(self.times['phase'])):
-            #     frame_index = t + m * len(self.times['phase'])
-            #     ori_frames[t] = cv2.resize(self.cell_mask[frame_index], ori_frames.shape[2:0:-1])
 
             self.chamber_cells_mask[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_frames
         # -------------- get cells contour ------------
@@ -331,8 +327,6 @@ class MomoFov:
         red_channels = dict()
         green_time_points = dict()
         red_time_points = dict()
-
-
         # for inx_t, time in enumerate(self.times['phase']):
         def parallel_flur_seg(inx_t, time):
             """
