@@ -26,20 +26,12 @@ def convert_time(time):
 
 
 # %% get all data and filter raw data
-dir = r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3'
+DIR = r'test_data_set/csv_data'
+ps = os.path.join(DIR, 'all_data.csv')
+fd_dfs = pd.read_csv(ps)
 
-all_scv = [file for file in os.listdir(dir) if file.split('.')[-1] == 'csv']
-dfs = [pd.read_csv(os.path.join(dir, ps)) for ps in tqdm(all_scv)]
 
-# for i, df in enumerate(dfs):
-#     chamber = [f'fov{i}_{ch}' for ch in df['chamber']]
-#     df['chamber'] = chamber
-dfs = pd.concat(dfs)
-dfs.index = pd.Index(range(len(dfs)))
-dfs['time_h'] = [convert_time(s) for s in dfs['time_s'] - min(dfs['time_s'])]
 
-fd_dfs = dfs[dfs['area'] > 100]
-print(f'''all chambers {len(list(set(fd_dfs['chamber'])))}''')
 # %% show distribution of all cells' size
 fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
 ax.hist(np.log(fd_dfs['area']), bins=100)
@@ -59,7 +51,7 @@ for cell in cells:
                fd_dfs[fd_dfs['chamber'] == cell]['area'],
                s=158)
 
-ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.65,
+ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0,
             fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.95)
 ax.set_xlabel('Time (h)')
 ax.set_ylabel('Cell size (pixels)')
@@ -69,7 +61,7 @@ fig2.show()
 ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
 fig1, ax = plt.subplots(1, 2, figsize=(21, 10))
 cells = list(set(ff_dfs['chamber']))
-cells = np.random.choice(cells, 5)
+cells = np.random.choice(cells, 1)
 for cell in cells:
     ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
                ff_dfs[ff_dfs['chamber'] == cell]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell]['red_mean'])
@@ -85,9 +77,9 @@ for cell in cells:
     ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
                   s=20)
 ax[1].set_xscale('log')
-ax[1].set_xlim(100, 2000)
+ax[1].set_xlim(1, 2000)
 ax[1].set_yscale('log')
-ax[1].set_ylim(100, 15000)
+ax[1].set_ylim(1, 15000)
 ax[1].set_xlabel('Rfp intensity')
 ax[1].set_ylabel('Gfp intensity')
 ax[1].grid(False)
