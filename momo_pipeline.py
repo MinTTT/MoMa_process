@@ -13,8 +13,7 @@ import sys
 import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
-from multiprocessing.pool import ThreadPool
-import asyncio
+
 
 import time
 # […]
@@ -23,7 +22,7 @@ import time
 from utils.delta.data import postprocess
 from utils.delta.model import unet_chambers, unet_seg
 import numpy as np
-# import matplotlib.pyplot as plt
+
 import tensorflow as tf
 import cv2
 import tifffile as tif
@@ -35,6 +34,7 @@ import dask
 # dask.config.set(pool=ThreadPool(64))
 from dask.distributed import Client, progress
 from dask.diagnostics import ProgressBar
+
 
 client = Client(threads_per_worker=64, n_workers=8)
 
@@ -297,7 +297,7 @@ class MomoFov:
         seg = model_seg.predict(seg_inputs, verbose=1)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
 
-        # -------------- reform the size-------------- -----
+        # -------------- reform the size-------------- TODO: parallel 1
         def parallel_rearange_mask(t, chn):
             frame_index = t + chn * len(self.times['phase'])
             ori_frames[t] = cv2.resize(self.cell_mask[frame_index], ori_frames.shape[2:0:-1])
