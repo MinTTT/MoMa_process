@@ -13,8 +13,7 @@ import sys
 import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
-from multiprocessing.pool import ThreadPool
-import asyncio
+
 
 import time
 # […]
@@ -23,7 +22,7 @@ import time
 from utils.delta.data import saveResult_seg, predictGenerator_seg, postprocess
 from utils.delta.model import unet_chambers, unet_seg
 import numpy as np
-import matplotlib.pyplot as plt
+
 import tensorflow as tf
 import cv2
 import tifffile as tif
@@ -37,7 +36,7 @@ import dask
 from dask.distributed import Client, progress
 from dask.diagnostics import ProgressBar
 
-client = Client(threads_per_worker=64, n_workers=32)
+client = Client(threads_per_worker=64, n_workers=1)
 
 # Allow memory growth for the GPU
 # physical_devices = tf.config.experimental.list_physical_devices('GPU')
