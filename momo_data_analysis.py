@@ -6,8 +6,11 @@ from joblib import load
 import os
 from tqdm import tqdm
 import sys
-
+import dask
 import seaborn as sns
+from dask.distributed import Client
+
+client = Client(n_workers=4, threads_per_worker=16)
 
 sys.path.append(r'D:\python_code\data_explore')
 try:
@@ -30,8 +33,6 @@ DIR = r'test_data_set/csv_data'
 ps = os.path.join(DIR, 'all_data.csv')
 fd_dfs = pd.read_csv(ps)
 
-
-
 # %% show distribution of all cells' size
 fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
 ax.hist(np.log(fd_dfs['area']), bins=100)
@@ -51,8 +52,8 @@ for cell in cells:
                fd_dfs[fd_dfs['chamber'] == cell]['area'],
                s=158)
 
-ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0,
-            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.95)
+ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.2,
+            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.8)
 ax.set_xlabel('Time (h)')
 ax.set_ylabel('Cell size (pixels)')
 fig2.show()
@@ -61,7 +62,7 @@ fig2.show()
 ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
 fig1, ax = plt.subplots(1, 2, figsize=(21, 10))
 cells = list(set(ff_dfs['chamber']))
-cells = np.random.choice(cells, 1)
+cells = np.random.choice(cells, 3)
 for cell in cells:
     ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
                ff_dfs[ff_dfs['chamber'] == cell]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell]['red_mean'])
@@ -77,9 +78,9 @@ for cell in cells:
     ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
                   s=20)
 ax[1].set_xscale('log')
-ax[1].set_xlim(1, 2000)
+ax[1].set_xlim(0.1, 5000)
 ax[1].set_yscale('log')
-ax[1].set_ylim(1, 15000)
+ax[1].set_ylim(0.1, 15000)
 ax[1].set_xlabel('Rfp intensity')
 ax[1].set_ylabel('Gfp intensity')
 ax[1].grid(False)
@@ -98,9 +99,10 @@ for cell in tqdm(cells[cell_ints]):
 
 fc = pd.DataFrame(data=dict(chamber=cells[cell_ints],
                             fold_change=fc_list))
-
-fig3, ax = plt.subplots(1, 1)
-sns.histplot(data=fc, x='fold_change', bins=100, log_scale=True, ax=ax)
+fc = fc[~np.isinf(fc['fold_change'])]
+fc = fc[fc['fold_change'] > 0]
+fig3, ax = plt.subplots(1, 1, figsize=(12, 12))
+sns.histplot(data=fc, x='fold_change', bins=200, log_scale=True, ax=ax)
 
 fig3.show()
 
@@ -123,8 +125,8 @@ time_intervals = np.linspace(time_min, time_max, num=index_num + 1)
 bin_mean = []
 for i in range(index_num):
     bin_avg = \
-    traj_pd[np.logical_and(traj_pd['time_h'] >= time_intervals[i], traj_pd['time_h'] < time_intervals[i + 1])][
-        'fold_change']
+        traj_pd[np.logical_and(traj_pd['time_h'] >= time_intervals[i], traj_pd['time_h'] < time_intervals[i + 1])][
+            'fold_change']
     bin_mean.append(np.mean(bin_avg))
 time_mean = []
 for i in range(index_num):
@@ -135,7 +137,7 @@ for cell in cells:
     ax.plot(traj_pd[traj_pd['chamber'] == cell]['time_h'], traj_pd[traj_pd['chamber'] == cell]['fold_change'],
             alpha=0.9,
             ls='-', c='#CCD1D1', lw=1)
-ax.set_ylim(0.1, 10)
+ax.set_ylim(0.1, 100)
 ax.set_yscale('linear')
 ax.set_xlim(time_min, time_max)
 ax.plot(time_mean, bin_mean)
@@ -156,15 +158,17 @@ ax.set_ylim(100, 20000)
 ax.set_xlim(100, 2000)
 # ax.set_xscale('log')
 fig4.show()
-#%% gaussian mixture
+# %% gaussian mixture
 from sklearn.mixture import GaussianMixture
+
 gm = GaussianMixture(n_components=6)
 gm.fit(final_flu_pd[['green_mean', 'red_mean']])
 predict = gm.predict(final_flu_pd[['green_mean', 'red_mean']])
 final_flu_pd['classify'] = predict
 fig4, ax = plt.subplots(1, 1)
 sns.histplot(x=final_flu_pd['red_mean'], y=final_flu_pd['green_mean'], bins=200, log_scale=True, ax=ax)
-ax.scatter(final_flu_pd[final_flu_pd['classify']==0]['red_mean'], final_flu_pd[final_flu_pd['classify'] == 0]['green_mean'],
+ax.scatter(final_flu_pd[final_flu_pd['classify'] == 0]['red_mean'],
+           final_flu_pd[final_flu_pd['classify'] == 0]['green_mean'],
            s=1, c='r')
 ax.set_ylim(100, 20000)
 # ax.set_yscale('log')
@@ -186,6 +190,9 @@ fig4.show()
 
 
 # %%
+ff_dfs = ff_dfs[ff_dfs['red_medium'] > 0]
+ff_dfs = ff_dfs[ff_dfs['green_medium'] > 0]
+
 fig2, ax = plt.subplots(1, 1, figsize=(12, 10))
 sns.histplot(x=ff_dfs['red_mean'], y=ff_dfs['green_mean'],
              log_scale=(True, True),

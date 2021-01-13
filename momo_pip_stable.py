@@ -31,7 +31,7 @@ def paral_read_csv(ps):
 
 
 # %%
-DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+DIR = r'test_data_set/test_data'
 fovs_name = mp.get_fovs_name(DIR)
 fovs_num = len(fovs_name)
 init = 0
@@ -42,8 +42,8 @@ while fovs_name:
     init += 1
     to_process.process_flow()
 
-all_scv = [file for file in os.listdir(DIR) if file.split('.')[-1] == 'csv']
-all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv]
+all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and  file.split('_')[0] == 'fov')]
+all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv_name]
 
 with ProgressBar():
     al_df = dask.compute(*all_scv, scheduler='threads')

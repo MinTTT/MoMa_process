@@ -112,11 +112,11 @@ def rangescale(frame, rescale):
     return frame
 
 #%%
-DIR = r'D:\python_code\MoMa_process\test_data_set\test_data'
+DIR = r'D:\python_code\MoMa_process\test_data_set\jl_data'
 jl_file = find_jl(DIR)
 fov_jl = load(jl_file[-1])
 
 #%%
-ims_with_cnt = draw_contour(ch=4, channel='green', time=[0, 4], fov_jl=fov_jl)
+ims_with_cnt = draw_contour(ch=4, channel='red', time=[100, 108], fov_jl=fov_jl)
 pylab.imshow(ims_with_cnt)
 pylab.show()
