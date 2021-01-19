@@ -11,7 +11,7 @@ import dask
 import seaborn as sns
 from dask.distributed import Client
 
-client = Client(n_workers=4, threads_per_worker=16)
+client = Client(n_workers=4, threads_per_worker=8)
 
 sys.path.append(r'D:\python_code\data_explore')
 try:
@@ -219,7 +219,7 @@ for i, ax in enumerate(axes):
 fig4.show()
 
 # %%
-fluor_binnum = 100
+fluor_binnum = 300
 
 cells_green = []
 cells_red = []
@@ -238,12 +238,16 @@ binned_time, bgreen_mean, bgreen_std = binned_average(cells_time, cells_green)
 _, bred_mean, bred_std = binned_average(cells_time, cells_red)
 
 fig5, ax = plt.subplots(1, 1)
-sld_cells = np.random.choice(clfd_cells[0], 10)
+sld_cells = np.random.choice(clfd_cells[0], 50)
 for cell in tqdm(sld_cells):
     cell_data = cells_df[cell]
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
-    ax.plot(mask_df['green_medium'], mask_df['red_medium'], color='#ABB2B9', lw=0.5, alpha=0.4)
-ax.scatter(bgreen_mean, bred_mean, s=40, color='#3498DB')
+    ax.plot(mask_df['green_medium'], mask_df['red_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
+ax.scatter(bgreen_mean, bred_mean, s=30, color='#3498DB')
+ax.set_xscale('log')
+ax.set_yscale('log')
+ax.set_xlabel('GFP intensity (a.u.)')
+ax.set_ylabel('mCherry intensity (a.u.)')
 fig5.show()
 
 # %% show distribution of all cells' size
