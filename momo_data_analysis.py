@@ -6,12 +6,12 @@ from joblib import load
 import os
 from tqdm import tqdm
 import sys
-
+from dask.diagnostics import ProgressBar
 import dask
 import seaborn as sns
 from dask.distributed import Client
 
-client = Client(n_workers=4, threads_per_worker=8)
+client = Client(n_workers=4, threads_per_worker=16)
 
 sys.path.append(r'D:\python_code\data_explore')
 try:
@@ -29,14 +29,14 @@ def convert_time(time):
     return h
 
 
-def get_growth_rate(all_df, cell_name, **kwargs):
+def get_growth_rate(cell_df, **kwargs):
     """
     filter cell's growth cycle data, compute instantaneous growth rate.
     :param cell_df: pandas data frame
     :param kwargs: 'sizetype', length or area
     :return: ndarray, (2, len of dataframe)
     """
-    cell_df = all_df[all_df['chamber'] == cell_name]
+
     if 'sizetype' in kwargs:
         st = kwargs['sizetype']
     else:
@@ -93,15 +93,20 @@ def binned_average(bin_ref, high_imdata, num=100):
     :param num:
     :return:
     """
-    bin_num = num
-    time = bin_ref
+    binned_num = num
+    binned_time = bin_ref
     gr = high_imdata
-    bins = np.linspace(time.min(), time.max(), num=bin_num + 1)
-    index = np.searchsorted(bins, time, side='right')
-    time_avg = np.array([np.average(time[index == i + 1]) for i in range(bin_num)])
-    gr_avg = np.array([np.average(gr[index == i + 1]) for i in range(bin_num)])
-    gr_std = np.array([np.std(gr[index == i + 1]) for i in range(bin_num)])
-    return [time_avg, gr_avg, gr_std]
+    bins = np.linspace(binned_time.min(), binned_time.max(), num=binned_num + 1)
+    index = np.searchsorted(bins, binned_time, side='right')
+    binned_time_avg = np.array([np.average(binned_time[index == binned_i + 1]) for binned_i in range(binned_num)])
+    binned_gr_avg = np.array([np.average(gr[index == binned_i + 1]) for binned_i in range(binned_num)])
+    binned_gr_std = np.array([np.std(gr[index == binned_i + 1]) for binned_i in range(binned_num)])
+    return [binned_time_avg, binned_gr_avg, binned_gr_std]
+
+
+@dask.delayed
+def daskdf_parse(df, keys, na):
+    return df[df[keys] == na]
 
 
 # %% get all data and filter raw data
@@ -112,15 +117,20 @@ fd_dfs = pd.read_csv(ps)
 # %%
 cells_name = list(set(fd_dfs['chamber']))
 cells_name.sort()
+dask_df = client.scatter(fd_dfs)  # scatter data into client
 
+cells_df = dask.delayed(dict)([(cn, dask.delayed(daskdf_parse)(dask_df, 'chamber', cn)) for cn in cells_name])
+
+cells_df = cells_df.compute()
 # %% filter data
 
 
-# results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(fd_dfs, cn)) for cn in tqdm(cells_name)])
-# results.compute()
+results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(cells_df[cn])) for cn in tqdm(cells_name)])
 
-cells_growth_rate = {cn: get_growth_rate(fd_dfs, cn) for cn in tqdm(cells_name)}
-cells_growth_rate = {cn: cells_growth_rate[cn] for cn in tqdm(cells_name)
+cells_growth_rate = results.compute()
+
+# cells_growth_rate = {cn: get_growth_rate(fd_dfs, cn) for cn in tqdm(cells_name)}
+cells_growth_rate = {cn: cells_growth_rate[cn] for cn in cells_name
                      if isinstance(cells_growth_rate[cn], np.ndarray)}
 
 gr_array = [cells_growth_rate[na] for na in tqdm(list(cells_growth_rate.keys())) if
@@ -131,11 +141,8 @@ gr_array = np.vstack(gr_array)
 bin_num = 250
 time = gr_array[:, 0]
 gr = gr_array[:, 1]
-bins = np.linspace(time.min(), time.max(), num=bin_num + 1)
-index = np.searchsorted(bins, time, side='right')
-time_avg = np.array([np.average(time[index == i + 1]) for i in tqdm(range(bin_num))])
-gr_avg = np.array([np.average(gr[index == i + 1]) for i in tqdm(range(bin_num))])
-gr_std = np.array([np.std(gr[index == i + 1]) for i in tqdm(range(bin_num))])
+time_avg, gr_avg, gr_std = binned_average(time, gr, bin_num)
+
 std_up = gr_avg + gr_std
 std_down = gr_avg - gr_std
 
@@ -155,20 +162,89 @@ ax.set_ylim(-80, 220)
 ax.set_xlabel('Time (h)')
 ax.set_ylabel('Growth rate (1/h)')
 fig1.show()
-#%%
-two_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=2)[1]) for cn in list(cells_growth_rate.keys())]
+# %% binned two
 
-two_binned = np.array(two_binned)
+cells_name = list(cells_growth_rate.keys())
+four_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=4)[1])
+               for cn in cells_name]
+four_binned = np.array(four_binned)
 
-fig2, ax = plt.subplots(1, 1)
+# K-MES classify
+from sklearn.cluster import KMeans
 
-ax.scatter(two_binned[:, 0], two_binned[:, 1])
+km_model = KMeans(n_clusters=3, random_state=4).fit(four_binned)
+km_label = km_model.labels_
+colors_4 = ['#DBB38F', '#91DB8F', '#8FB7DB', '#D98FDB']  # brown, green, blue, violet
+fig3, ax = plt.subplots(1, 1)
+for label in range(4):
+    color = colors_4[label]
+    masked_data = four_binned[km_label == label, :]
+    ax.scatter(masked_data[:, 0], masked_data[:, -1], color=color)
+ax.set_xlabel('Growth rate (before shift)')
+ax.set_ylabel('Growth rate (after shift)')
+fig3.show()
+clfd_cells = []
+for i in range(3):
+    clfd_chamber = np.where(km_label == i)[0]
+    clfd_cells.append([cells_name[ind] for ind in clfd_chamber])
 
-fig2.show()
+# plot classified
+fig4, axes = plt.subplots(3, 1, figsize=(15, 15))
+for i, ax in enumerate(axes):
+    clfd_chamber = np.where(km_label == i)[0]
+    clfd_chamber = [cells_name[ind] for ind in clfd_chamber]
+    gr_array = [cells_growth_rate[na] for na in tqdm(clfd_chamber) if
+                isinstance(cells_growth_rate[na], np.ndarray)]
+    gr_array = np.vstack(gr_array)
+    # binned average
+    bin_num = 250
+    time = gr_array[:, 0]
+    gr = gr_array[:, 1]
+    time_avg, gr_avg, gr_std = binned_average(time, gr, bin_num)
+    std_up = gr_avg + gr_std
+    std_down = gr_avg - gr_std
+    cells = np.random.choice(clfd_chamber, 10)
+    for na in tqdm(cells):
+        data = cells_growth_rate[na]
+        if isinstance(data, np.ndarray):
+            ax.plot(data[:, 0], data[:, 1], color='#ABB2B9', lw=0.5, alpha=0.4) # show in grey
+    ax.plot(data[:, 0], data[:, 1], color='#E67E22', lw=1.2, alpha=0.5)
+    ax.plot(time_avg, std_up, '--', lw=3, color='#5DADE2')
+    ax.plot(time_avg, std_down, '--', lw=3, color='#5DADE2')
+    ax.scatter(time_avg, gr_avg, s=40, color='#3498DB')
+    ax.set_xlim(0, time.max())
+    ax.set_ylim(-80, 220)
+    ax.set_xlabel('Time (h)')
+    ax.set_ylabel('Growth rate (1/h)')
+fig4.show()
+
+# %%
+fluor_binnum = 100
+
+cells_green = []
+cells_red = []
+cells_time = []
+for cell in tqdm(clfd_cells[0]):
+    mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
+    cells_green.append(mask_df['green_medium'].values.reshape(-1, 1))
+    cells_red.append(mask_df['red_medium'].values.reshape(-1, 1))
+    cells_time.append(mask_df['time_h'].values.reshape(-1, 1))
+cells_green = np.vstack(cells_green)
+cells_red = np.vstack(cells_red)
+cells_time = np.vstack(cells_time)
 
 
+binned_time, bgreen_mean, bgreen_std = binned_average(cells_time, cells_green)
+_, bred_mean, bred_std = binned_average(cells_time, cells_red)
 
-
+fig5, ax = plt.subplots(1, 1)
+sld_cells = np.random.choice(clfd_cells[0], 10)
+for cell in tqdm(sld_cells):
+    cell_data = cells_df[cell]
+    mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
+    ax.plot(mask_df['green_medium'], mask_df['red_medium'], color='#ABB2B9', lw=0.5, alpha=0.4)
+ax.scatter(bgreen_mean, bred_mean, s=40, color='#3498DB')
+fig5.show()
 
 # %% show distribution of all cells' size
 fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
@@ -186,12 +262,10 @@ for cell in cells:
     ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
                fd_dfs[fd_dfs['chamber'] == cell]['area'],
                s=158)
-
 ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.2,
             fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.8)
 ax.set_xlabel('Time (h)')
 ax.set_ylabel('Cell size (pixels)')
-
 fig2.show()
 
 # %% extract data with fluorescence information
@@ -279,6 +353,7 @@ ax.set_xlim(time_min, time_max)
 ax.plot(time_mean, bin_mean)
 ax.grid(False)
 fi2.show()
+
 # %%
 final_flu = []
 for cell in cells:
