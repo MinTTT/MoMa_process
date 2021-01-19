@@ -6,11 +6,12 @@ from joblib import load
 import os
 from tqdm import tqdm
 import sys
+
 import dask
 import seaborn as sns
 from dask.distributed import Client
 
-client = Client(n_workers=4, threads_per_worker=16)
+client = Client(n_workers=4, threads_per_worker=8)
 
 sys.path.append(r'D:\python_code\data_explore')
 try:
@@ -28,10 +29,146 @@ def convert_time(time):
     return h
 
 
+def get_growth_rate(all_df, cell_name, **kwargs):
+    """
+    filter cell's growth cycle data, compute instantaneous growth rate.
+    :param cell_df: pandas data frame
+    :param kwargs: 'sizetype', length or area
+    :return: ndarray, (2, len of dataframe)
+    """
+    cell_df = all_df[all_df['chamber'] == cell_name]
+    if 'sizetype' in kwargs:
+        st = kwargs['sizetype']
+    else:
+        st = 'length'
+    if cell_df['time_h'].max() < 75:
+        return None
+    cell_area = cell_df[st]
+    area_dd = np.diff(np.diff(cell_area))
+    outlier = np.where(1 * cell_area[0:-2] < -area_dd)[0] + 1
+    mask = np.array([True] * len(cell_area))
+    mask[outlier] = False
+    fild_cell_df = cell_df[mask]
+    area_dd = np.diff(np.diff(fild_cell_df[st]))
+    outlier2 = np.where(1 * fild_cell_df[st][0:-2] < area_dd)[0] + 1
+    mask = np.array([True] * len(fild_cell_df))
+    mask[outlier2] = False
+    fild_cell_df = fild_cell_df[mask]  # filtered data, excluding outlier
+    fild_area_diff = np.diff(fild_cell_df[st])
+    div_thre = 0.8
+    min_p = fild_cell_df[st] * (1 - div_thre)
+    max_p = fild_cell_df[st] * div_thre
+    filter_peaks = np.where(np.logical_and(-fild_area_diff > min_p[:-1], -fild_area_diff < max_p[:-1]))[
+        0]  # division peaks
+    peak_num = len(filter_peaks)
+    peaks_sclice = [0] + list(filter_peaks + 1) + [len(fild_cell_df)]
+    num_peaks = np.diff(peaks_sclice)
+    len_index = np.where(num_peaks >= 4)[0]  # one cell cycle must have more than 4 records.
+    div_slice_all = [slice(peaks_sclice[i], peaks_sclice[i + 1]) for i in range(peak_num + 1)]
+    div_slice = [div_slice_all[i] for i in len_index]  # cell cycle slice
+    if len(div_slice) < 4:  # at least divide 4 times.
+        return None
+    time_all = []
+    rate_all = []
+    for sl in div_slice:
+        length = fild_cell_df[st].iloc[sl]
+        time = fild_cell_df['time_h'].iloc[sl]
+        time_diff = np.diff(time)
+        rate = np.diff(length) / time_diff
+        time = time[:-1] + time_diff / 2
+        rate_all.append(rate)
+        time_all.append(time)
+
+    rate_all = np.concatenate(rate_all)
+    time_all = np.concatenate(time_all)
+
+    return np.array([time_all, rate_all]).T
+
+
+def binned_average(bin_ref, high_imdata, num=100):
+    """
+    get binned average and standard
+    :param bin_ref:
+    :param high_imdata:
+    :param num:
+    :return:
+    """
+    bin_num = num
+    time = bin_ref
+    gr = high_imdata
+    bins = np.linspace(time.min(), time.max(), num=bin_num + 1)
+    index = np.searchsorted(bins, time, side='right')
+    time_avg = np.array([np.average(time[index == i + 1]) for i in range(bin_num)])
+    gr_avg = np.array([np.average(gr[index == i + 1]) for i in range(bin_num)])
+    gr_std = np.array([np.std(gr[index == i + 1]) for i in range(bin_num)])
+    return [time_avg, gr_avg, gr_std]
+
+
 # %% get all data and filter raw data
 DIR = r'test_data_set/csv_data'
-ps = os.path.join(DIR, 'all_data.csv')
+ps = os.path.join(DIR, '20210101_NCM_pECJ3_M5_L3_all_data.csv')
 fd_dfs = pd.read_csv(ps)
+
+# %%
+cells_name = list(set(fd_dfs['chamber']))
+cells_name.sort()
+
+# %% filter data
+
+
+# results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(fd_dfs, cn)) for cn in tqdm(cells_name)])
+# results.compute()
+
+cells_growth_rate = {cn: get_growth_rate(fd_dfs, cn) for cn in tqdm(cells_name)}
+cells_growth_rate = {cn: cells_growth_rate[cn] for cn in tqdm(cells_name)
+                     if isinstance(cells_growth_rate[cn], np.ndarray)}
+
+gr_array = [cells_growth_rate[na] for na in tqdm(list(cells_growth_rate.keys())) if
+            isinstance(cells_growth_rate[na], np.ndarray)]
+gr_array = np.vstack(gr_array)
+
+# binned average
+bin_num = 250
+time = gr_array[:, 0]
+gr = gr_array[:, 1]
+bins = np.linspace(time.min(), time.max(), num=bin_num + 1)
+index = np.searchsorted(bins, time, side='right')
+time_avg = np.array([np.average(time[index == i + 1]) for i in tqdm(range(bin_num))])
+gr_avg = np.array([np.average(gr[index == i + 1]) for i in tqdm(range(bin_num))])
+gr_std = np.array([np.std(gr[index == i + 1]) for i in tqdm(range(bin_num))])
+std_up = gr_avg + gr_std
+std_down = gr_avg - gr_std
+
+cells = np.random.choice(list(cells_growth_rate.keys()), 20)
+
+fig1, ax = plt.subplots(1, 1)
+for na in tqdm(cells):
+    data = cells_growth_rate[na]
+    if isinstance(data, np.ndarray):
+        ax.plot(data[:, 0], data[:, 1], color='#ABB2B9', lw=0.5, alpha=0.4)
+ax.plot(data[:, 0], data[:, 1], color='#E67E22', lw=1.2, alpha=0.5)
+ax.scatter(time_avg, gr_avg, s=40, color='#3498DB')
+ax.plot(time_avg, std_up, '--', lw=3, color='#5DADE2')
+ax.plot(time_avg, std_down, '--', lw=3, color='#5DADE2')
+ax.set_xlim(0, time.max())
+ax.set_ylim(-80, 220)
+ax.set_xlabel('Time (h)')
+ax.set_ylabel('Growth rate (1/h)')
+fig1.show()
+#%%
+two_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=2)[1]) for cn in list(cells_growth_rate.keys())]
+
+two_binned = np.array(two_binned)
+
+fig2, ax = plt.subplots(1, 1)
+
+ax.scatter(two_binned[:, 0], two_binned[:, 1])
+
+fig2.show()
+
+
+
+
 
 # %% show distribution of all cells' size
 fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
@@ -43,11 +180,9 @@ fig1.show()
 
 # fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
 cells = list(set(fd_dfs['chamber']))
-cells = np.random.choice(cells, 3)
+cells = np.random.choice(cells, 6)
 fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
 for cell in cells:
-    ax.plot(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
-            fd_dfs[fd_dfs['chamber'] == cell]['area'], '--')
     ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
                fd_dfs[fd_dfs['chamber'] == cell]['area'],
                s=158)
@@ -56,6 +191,7 @@ ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.2,
             fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.8)
 ax.set_xlabel('Time (h)')
 ax.set_ylabel('Cell size (pixels)')
+
 fig2.show()
 
 # %% extract data with fluorescence information

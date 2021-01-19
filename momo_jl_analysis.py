@@ -117,6 +117,6 @@ jl_file = find_jl(DIR)
 fov_jl = load(jl_file[-1])
 
 #%%
-ims_with_cnt = draw_contour(ch=4, channel='red', time=[100, 108], fov_jl=fov_jl)
+ims_with_cnt = draw_contour(ch=4, channel='gree', time=[200, 209], fov_jl=fov_jl)
 pylab.imshow(ims_with_cnt)
 pylab.show()
