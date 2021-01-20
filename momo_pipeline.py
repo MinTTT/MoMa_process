@@ -36,7 +36,7 @@ from dask.distributed import Client, progress
 from dask.diagnostics import ProgressBar
 
 
-client = Client(threads_per_worker=64, n_workers=8)
+client = Client(threads_per_worker=64, n_workers=12)
 
 # Allow memory growth for the GPU
 # physical_devices = tf.config.experimental.list_physical_devices('GPU')

@@ -30,14 +30,13 @@ def paral_read_csv(ps):
     return pd.read_csv(os.path.join(DIR, ps))
 
 
-# %%
-DIR = r'test_data_set/test_data'
+        # %%
+DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
 fovs_name = mp.get_fovs_name(DIR)
 fovs_num = len(fovs_name)
 init = 0
 while fovs_name:
-    to_process = fovs_name[0]
-    del fovs_name[0]
+    to_process = fovs_name.pop(0)
     print(f'Processing {init + 1}/{fovs_num}')
     init += 1
     to_process.process_flow()

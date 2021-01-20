@@ -6,12 +6,14 @@ from joblib import load
 import os
 from tqdm import tqdm
 import sys
-from dask.diagnostics import ProgressBar
-import dask
+from joblib import delayed, Parallel
 import seaborn as sns
-from dask.distributed import Client
 
-client = Client(n_workers=4, threads_per_worker=8)
+# from dask.diagnostics import ProgressBar
+# import dask
+# from dask.distributed import Client, LocalCluster
+# cluster = LocalCluster(n_workers=4, threads_per_worker=8)
+# client = Client(cluster)
 
 sys.path.append(r'D:\python_code\data_explore')
 try:
@@ -85,6 +87,8 @@ def get_growth_rate(cell_df, **kwargs):
     return np.array([time_all, rate_all]).T
 
 
+
+
 def binned_average(bin_ref, high_imdata, num=100):
     """
     get binned average and standard
@@ -104,7 +108,7 @@ def binned_average(bin_ref, high_imdata, num=100):
     return [binned_time_avg, binned_gr_avg, binned_gr_std]
 
 
-@dask.delayed
+# @dask.delayed
 def daskdf_parse(df, keys, na):
     return df[df[keys] == na]
 
@@ -117,17 +121,24 @@ fd_dfs = pd.read_csv(ps)
 # %%
 cells_name = list(set(fd_dfs['chamber']))
 cells_name.sort()
-dask_df = client.scatter(fd_dfs)  # scatter data into client
+# cluster.scale(64)
+# dask_df = client.scatter(fd_dfs)  # scatter data into client
 
-cells_df = dask.delayed(dict)([(cn, dask.delayed(daskdf_parse)(dask_df, 'chamber', cn)) for cn in cells_name])
+# cells_df = client.submit(dict, [(cn, client.submit(daskdf_parse, dask_df, 'chamber', cn)) for cn in tqdm(cells_name)])
 
-cells_df = cells_df.compute()
+# cells_df = cells_df.result()
+# cells_df = dask.delayed(dict)([(cn, dask.delayed(daskdf_parse)(dask_df, 'chamber', cn)) for cn in cells_name])
+cells_df = Parallel(n_jobs=64, backend='threading')(delayed(daskdf_parse)(fd_dfs, 'chamber', cn) for cn in tqdm(cells_name))
+#
+# cells_df = cells_df.compute()
+cells_df = {cn:cells_df[i] for i, cn in tqdm(enumerate(cells_name))}
 # %% filter data
 
-
-results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(cells_df[cn])) for cn in tqdm(cells_name)])
-
-cells_growth_rate = results.compute()
+cells_growth_rate = Parallel(n_jobs=32)(delayed(get_growth_rate)(cells_df[cn]) for cn in tqdm(cells_name))
+cells_growth_rate = {cn:cells_growth_rate[i] for i, cn in tqdm(enumerate(cells_name))}
+# results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(cells_df[cn])) for cn in tqdm(cells_name)])
+#
+# cells_growth_rate = results.compute()
 
 # cells_growth_rate = {cn: get_growth_rate(fd_dfs, cn) for cn in tqdm(cells_name)}
 cells_growth_rate = {cn: cells_growth_rate[cn] for cn in cells_name
@@ -162,7 +173,7 @@ ax.set_ylim(-80, 220)
 ax.set_xlabel('Time (h)')
 ax.set_ylabel('Growth rate (1/h)')
 fig1.show()
-# %% binned two
+# %% binned 4
 
 cells_name = list(cells_growth_rate.keys())
 four_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=4)[1])
@@ -220,11 +231,12 @@ fig4.show()
 
 # %%
 fluor_binnum = 300
-
+clfd_cell = clfd_cells[1]
 cells_green = []
 cells_red = []
 cells_time = []
-for cell in tqdm(clfd_cells[0]):
+
+for cell in tqdm(clfd_cell):
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
     cells_green.append(mask_df['green_medium'].values.reshape(-1, 1))
     cells_red.append(mask_df['red_medium'].values.reshape(-1, 1))
@@ -238,16 +250,19 @@ binned_time, bgreen_mean, bgreen_std = binned_average(cells_time, cells_green)
 _, bred_mean, bred_std = binned_average(cells_time, cells_red)
 
 fig5, ax = plt.subplots(1, 1)
-sld_cells = np.random.choice(clfd_cells[0], 50)
+sld_cells = np.random.choice(clfd_cell, 50)
 for cell in tqdm(sld_cells):
     cell_data = cells_df[cell]
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
-    ax.plot(mask_df['green_medium'], mask_df['red_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
-ax.scatter(bgreen_mean, bred_mean, s=30, color='#3498DB')
+    ax.plot(mask_df['red_medium'],mask_df['green_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
+ax.plot(mask_df['red_medium'],mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
+ax.scatter(bred_mean, bgreen_mean, s=30, color='#3498DB')
 ax.set_xscale('log')
 ax.set_yscale('log')
-ax.set_xlabel('GFP intensity (a.u.)')
-ax.set_ylabel('mCherry intensity (a.u.)')
+ax.set_ylabel('GFP intensity (a.u.)')
+ax.set_xlabel('mCherry intensity (a.u.)')
+ax.set_ylim(2, 3000)
+ax.set_xlim(2, 6000)
 fig5.show()
 
 # %% show distribution of all cells' size

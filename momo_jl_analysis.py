@@ -18,7 +18,10 @@ import numpy as np  # Or any other
 from joblib import load
 import cv2
 from matplotlib import pylab
-
+from tqdm import tqdm
+import dask
+from dask.distributed import Client
+client = Client(n_workers=16, threads_per_worker=32)
 
 def draw_contour(ch=None, ch_name=None,channel='phase',time=0, fov_jl=None):
     """
@@ -63,7 +66,7 @@ def draw_contour(ch=None, ch_name=None,channel='phase',time=0, fov_jl=None):
                 cell_cuntour.append(fov_jl['chamber_cells_contour'][ch_na][inx])
 
     ims_with_cnt = []
-    for i, cts in enumerate(cell_cuntour):
+    for i, cts in tqdm(enumerate(cell_cuntour)):
         ims_with_cnt.append(
             cv2.drawContours(to_BGR(rangescale(channel_im[i], (0, 255)).astype(np.uint8)), cts, -1,
                              (247, 220, 111),
