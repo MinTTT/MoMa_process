@@ -2,11 +2,11 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from joblib import load
+
 import os
 from tqdm import tqdm
 import sys
-from joblib import delayed, Parallel
+from joblib import delayed, Parallel, load
 import seaborn as sns
 
 # from dask.diagnostics import ProgressBar
@@ -87,8 +87,6 @@ def get_growth_rate(cell_df, **kwargs):
     return np.array([time_all, rate_all]).T
 
 
-
-
 def binned_average(bin_ref, high_imdata, num=100):
     """
     get binned average and standard
@@ -97,15 +95,39 @@ def binned_average(bin_ref, high_imdata, num=100):
     :param num:
     :return:
     """
+
     binned_num = num
     binned_time = bin_ref
     gr = high_imdata
     bins = np.linspace(binned_time.min(), binned_time.max(), num=binned_num + 1)
     index = np.searchsorted(bins, binned_time, side='right')
+
     binned_time_avg = np.array([np.average(binned_time[index == binned_i + 1]) for binned_i in range(binned_num)])
     binned_gr_avg = np.array([np.average(gr[index == binned_i + 1]) for binned_i in range(binned_num)])
     binned_gr_std = np.array([np.std(gr[index == binned_i + 1]) for binned_i in range(binned_num)])
     return [binned_time_avg, binned_gr_avg, binned_gr_std]
+
+
+def binned_average2(mat, num=100):
+    """
+    get binned average and standard
+
+    :param mat:
+    :param num:
+    :return:
+    """
+    binned_num = num
+    binned_time = mat[:, 0]
+    # gr = high_imdata
+    bins = np.linspace(binned_time.min(), binned_time.max(), num=binned_num + 1)
+    index = np.searchsorted(bins, binned_time, side='right')
+    # binned_avg = np.array(Parallel(n_jobs=8, backend='threading')(delayed(np.average)(mat[index == binned_i + 1, :], axis=0)
+    #                                           for binned_i in range(binned_num)))
+    # binned_std = np.array(Parallel(n_jobs=8, backend='threading')(delayed(np.std)(mat[index == binned_i + 1, :], axis=0)
+    #                                           for binned_i in range(binned_num)))
+    binned_avg = np.array([np.average(mat[index == binned_i + 1, :], axis=0) for binned_i in range(binned_num)])
+    binned_std = np.array([np.std(mat[index == binned_i + 1, :], axis=0) for binned_i in range(binned_num)])
+    return [binned_avg, binned_std]
 
 
 # @dask.delayed
@@ -113,47 +135,31 @@ def daskdf_parse(df, keys, na):
     return df[df[keys] == na]
 
 
-# %% get all data and filter raw data
-DIR = r'test_data_set/csv_data'
-ps = os.path.join(DIR, '20210101_NCM_pECJ3_M5_L3_all_data.csv')
-fd_dfs = pd.read_csv(ps)
-
 # %%
-cells_name = list(set(fd_dfs['chamber']))
-cells_name.sort()
-# cluster.scale(64)
-# dask_df = client.scatter(fd_dfs)  # scatter data into client
-
-# cells_df = client.submit(dict, [(cn, client.submit(daskdf_parse, dask_df, 'chamber', cn)) for cn in tqdm(cells_name)])
-
-# cells_df = cells_df.result()
-# cells_df = dask.delayed(dict)([(cn, dask.delayed(daskdf_parse)(dask_df, 'chamber', cn)) for cn in cells_name])
-cells_df = Parallel(n_jobs=64, backend='threading')(delayed(daskdf_parse)(fd_dfs, 'chamber', cn) for cn in tqdm(cells_name))
-#
+ps = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3\mothers_raw_dic.jl'
 # cells_df = cells_df.compute()
-cells_df = {cn:cells_df[i] for i, cn in tqdm(enumerate(cells_name))}
+cells_df = load(ps)
+cells_name = list(cells_df.keys())
 # %% filter data
-
-cells_growth_rate = Parallel(n_jobs=32)(delayed(get_growth_rate)(cells_df[cn]) for cn in tqdm(cells_name))
-cells_growth_rate = {cn:cells_growth_rate[i] for i, cn in tqdm(enumerate(cells_name))}
+cells_growth_rate = Parallel(n_jobs=1000, backend='threading')(
+    delayed(get_growth_rate)(cells_df[cn]) for cn in tqdm(cells_name))
+cells_growth_rate = {cn: cells_growth_rate[i] for i, cn in tqdm(enumerate(cells_name))}
 # results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(cells_df[cn])) for cn in tqdm(cells_name)])
-#
 # cells_growth_rate = results.compute()
-
 # cells_growth_rate = {cn: get_growth_rate(fd_dfs, cn) for cn in tqdm(cells_name)}
 cells_growth_rate = {cn: cells_growth_rate[cn] for cn in cells_name
                      if isinstance(cells_growth_rate[cn], np.ndarray)}
-
 gr_array = [cells_growth_rate[na] for na in tqdm(list(cells_growth_rate.keys())) if
             isinstance(cells_growth_rate[na], np.ndarray)]
 gr_array = np.vstack(gr_array)
-
 # binned average
 bin_num = 250
 time = gr_array[:, 0]
 gr = gr_array[:, 1]
-time_avg, gr_avg, gr_std = binned_average(time, gr, bin_num)
-
+avg, std = binned_average2(gr_array, bin_num)
+time_avg = avg[:, 0]
+gr_avg = avg[:, 1]
+gr_std = std[:, 1]
 std_up = gr_avg + gr_std
 std_down = gr_avg - gr_std
 
@@ -176,8 +182,11 @@ fig1.show()
 # %% binned 4
 
 cells_name = list(cells_growth_rate.keys())
-four_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=4)[1])
-               for cn in cells_name]
+four_binned = Parallel(n_jobs=1000, backend='threading')(
+    delayed(list)(binned_average2(cells_growth_rate[cn], num=4)[0][:, 1])
+    for cn in tqdm(cells_name))
+# four_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=4)[1])
+#                for cn in cells_name]
 four_binned = np.array(four_binned)
 
 # K-MES classify
@@ -218,7 +227,7 @@ for i, ax in enumerate(axes):
     for na in tqdm(cells):
         data = cells_growth_rate[na]
         if isinstance(data, np.ndarray):
-            ax.plot(data[:, 0], data[:, 1], color='#ABB2B9', lw=0.5, alpha=0.4) # show in grey
+            ax.plot(data[:, 0], data[:, 1], color='#ABB2B9', lw=0.5, alpha=0.4)  # show in grey
     ax.plot(data[:, 0], data[:, 1], color='#E67E22', lw=1.2, alpha=0.5)
     ax.plot(time_avg, std_up, '--', lw=3, color='#5DADE2')
     ax.plot(time_avg, std_down, '--', lw=3, color='#5DADE2')
@@ -230,33 +239,37 @@ for i, ax in enumerate(axes):
 fig4.show()
 
 # %%
-fluor_binnum = 300
+fluor_binnum = 100
 clfd_cell = clfd_cells[1]
 cells_green = []
 cells_red = []
 cells_time = []
-
+flu_cells_dict = {cn: None for cn in clfd_cell}
+grey_color = dict(color='#ABB2B9', lw=0.5, alpha=0.5)
+orange_color = dict(color='#E67E22', lw=2, alpha=0.6)
 for cell in tqdm(clfd_cell):
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
-    cells_green.append(mask_df['green_medium'].values.reshape(-1, 1))
-    cells_red.append(mask_df['red_medium'].values.reshape(-1, 1))
-    cells_time.append(mask_df['time_h'].values.reshape(-1, 1))
+    flu_cells_dict[cell] = mask_df
+    cells_green.append(mask_df[['green_medium', 'red_medium', 'time_h']].values.reshape(-1, 3))
+    # cells_red.append(mask_df['red_medium'].values.reshape(-1, 1))
+    # cells_time.append(mask_df['time_h'].values.reshape(-1, 1))
 cells_green = np.vstack(cells_green)
-cells_red = np.vstack(cells_red)
-cells_time = np.vstack(cells_time)
+# cells_red = np.vstack(cells_red)
+# cells_time = np.vstack(cells_time)
 
-
-binned_time, bgreen_mean, bgreen_std = binned_average(cells_time, cells_green)
-_, bred_mean, bred_std = binned_average(cells_time, cells_red)
+mean_flu, std = binned_average2(cells_green[:, -1::-1], num=fluor_binnum)
+bred_mean = mean_flu[:, 1]
+bgreen_mean = mean_flu[:, -1]
+# _, bred_mean, bred_std = binned_average(cells_time, cells_red, num=fluor_binnum)
 
 fig5, ax = plt.subplots(1, 1)
-sld_cells = np.random.choice(clfd_cell, 50)
+sld_cells = np.random.choice(clfd_cell, 4)
 for cell in tqdm(sld_cells):
     cell_data = cells_df[cell]
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
-    ax.plot(mask_df['red_medium'],mask_df['green_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
-ax.plot(mask_df['red_medium'],mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
-ax.scatter(bred_mean, bgreen_mean, s=30, color='#3498DB')
+    ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
+ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
+# ax.scatter(bred_mean, bgreen_mean, s=30, color='#3498DB')
 ax.set_xscale('log')
 ax.set_yscale('log')
 ax.set_ylabel('GFP intensity (a.u.)')
@@ -265,222 +278,284 @@ ax.set_ylim(2, 3000)
 ax.set_xlim(2, 6000)
 fig5.show()
 
+# %%
+bin_num = 8
+binned_fluor = np.zeros((len(clfd_cell), bin_num))
+
+
+def flu_binned(index, cn):
+    green_over_red = (flu_cells_dict[cn]['green_medium'] + 1) / (flu_cells_dict[cn]['red_medium'] + 1)
+    green_over_red = green_over_red.values.reshape(-1, 1)
+    data = np.hstack([flu_cells_dict[cn]['time_h'].values.reshape(-1, 1), green_over_red])
+    binned_fluor[index, :] = binned_average2(data, bin_num)[0][:, 1]
+
+
+_ = Parallel(n_jobs=32, backend='threading')(delayed(flu_binned)(index, cn) for index, cn in enumerate(tqdm(clfd_cell)))
+
+log_bin_flu = np.log(binned_fluor)
+print('Modeling Fitting.')
+km_model2 = KMeans(2, random_state=3).fit(log_bin_flu[:, -4:-1])
+km_label2 = km_model2.labels_
+
+fig6, ax = plt.subplots(1, 1)
+for i in list(set(km_label2)):
+    ax.scatter(binned_fluor[km_label2 == i, :][:, -2], binned_fluor[km_label2 == i, :][:, -1])
+# ax.scatter(binned_fluor[km_label2 == 1, :][:, 2], binned_fluor[km_label2 == 1, :][:, 3])
+ax.set_xlim(1e-3, 30)
+ax.set_ylim(1e-2, 35)
+ax.set_xscale('log')
+ax.set_yscale('log')
+fig6.show()
+
+fig7, ax = plt.subplots(1, 1)
+for label in list(set(km_label2)):
+    mask = km_label2 == label
+    selected_cell = [clfd_cell[i] for i in np.arange(len(km_label2))[mask]]
+    cells = np.random.choice(selected_cell, 20)
+    for cell in cells:
+        ax.plot(flu_cells_dict[cell]['red_medium'], flu_cells_dict[cell]['green_medium'], color=colors_4[label])
+ax.set_xscale('log')
+ax.set_yscale('log')
+ax.set_ylabel('GFP intensity (a.u.)')
+ax.set_xlabel('mCherry intensity (a.u.)')
+ax.set_ylim(2, 3000)
+ax.set_xlim(2, 6000)
+fig7.show()
+
+num_ax = len(list(set(km_label2)))
+fig8, ax = plt.subplots(num_ax, 1, figsize=(8, 12*num_ax))
+for label in list(set(km_label2)):
+    mask = km_label2 == label
+    selected_cell = [clfd_cell[i] for i in np.arange(len(km_label2))[mask]]
+    cells = np.random.choice(selected_cell, 20)
+    for cell in cells:
+        ax[label].plot(flu_cells_dict[cell]['red_medium'], flu_cells_dict[cell]['green_medium'], **grey_color)
+    data = np.vstack([flu_cells_dict[cn][['time_h', 'green_medium', 'red_medium']].values for cn in selected_cell])
+    binned_avg, _ = binned_average2(data, 50)
+    ax[label].scatter(binned_avg[:, 2], binned_avg[:, 1])
+    ax[label].set_xscale('log')
+    ax[label].set_yscale('log')
+    ax[label].set_ylabel('GFP intensity (a.u.)')
+    ax[label].set_xlabel('mCherry intensity (a.u.)')
+    ax[label].set_ylim(2, 3000)
+    ax[label].set_xlim(2, 6000)
+fig8.show()
 # %% show distribution of all cells' size
-fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
-ax.hist(np.log(fd_dfs['area']), bins=100)
-ax.set_xlabel('Cell area (log(pixels))')
-ax.set_ylabel('Number')
-fig1.show()
-# %%
-
-# fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
-cells = list(set(fd_dfs['chamber']))
-cells = np.random.choice(cells, 6)
-fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
-for cell in cells:
-    ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
-               fd_dfs[fd_dfs['chamber'] == cell]['area'],
-               s=158)
-ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.2,
-            fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.8)
-ax.set_xlabel('Time (h)')
-ax.set_ylabel('Cell size (pixels)')
-fig2.show()
-
-# %% extract data with fluorescence information
-ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
-fig1, ax = plt.subplots(1, 2, figsize=(21, 10))
-cells = list(set(ff_dfs['chamber']))
-cells = np.random.choice(cells, 3)
-for cell in cells:
-    ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
-               ff_dfs[ff_dfs['chamber'] == cell]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell]['red_mean'])
-    # ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'], ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '-r')
-# ax[0].set_ylim(100, 50000)
-ax[0].set_yscale('log')
-ax[0].set_xlim(0)
-ax[0].set_xlabel('Time (h)')
-ax[0].set_ylabel('Fold increase (gfp/rfp)')
-ax[0].grid(False)
-
-for cell in cells:
-    ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
-                  s=20)
-ax[1].set_xscale('log')
-ax[1].set_xlim(0.1, 5000)
-ax[1].set_yscale('log')
-ax[1].set_ylim(0.1, 15000)
-ax[1].set_xlabel('Rfp intensity')
-ax[1].set_ylabel('Gfp intensity')
-ax[1].grid(False)
-fig1.show()
-# %%
-cells = np.array(list(set(ff_dfs['chamber'])))
-cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 10 else False for cell in cells]
-fc_list = []
-for cell in tqdm(cells[cell_ints]):
-    fc_i = ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[0][
-        'red_mean']
-    fc_f = ff_dfs[ff_dfs['chamber'] == cell].iloc[-1]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[-1][
-        'red_mean']
-    fc = fc_i / fc_f
-    fc_list.append(fc)
-
-fc = pd.DataFrame(data=dict(chamber=cells[cell_ints],
-                            fold_change=fc_list))
-fc = fc[~np.isinf(fc['fold_change'])]
-fc = fc[fc['fold_change'] > 0]
-fig3, ax = plt.subplots(1, 1, figsize=(12, 12))
-sns.histplot(data=fc, x='fold_change', bins=200, log_scale=True, ax=ax)
-
-fig3.show()
-
-# %% BIN AVERGATE
-
-index_num = 99
-ff_dfs.index = pd.Index(range(len(ff_dfs)))
-ff_dfs['fold_change'] = ff_dfs['green_mean'] / ff_dfs['red_mean']
-cells = list(set(ff_dfs['chamber']))
-ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
-ints_2 = [True if ff_dfs[ff_dfs['chamber'] == cell]['fold_change'].values[-1] < 4 else False for cell in cells]
-cell_ints = np.logical_and(ints, ints_2)
-cell_ints = np.where(cell_ints)[0]
-cells = np.array(cells)
-traj_mask = [True if cham in cells[list(cell_ints)] else False for cham in ff_dfs['chamber']]
-traj_pd = ff_dfs[traj_mask]
-time_min = traj_pd['time_h'].min()
-time_max = traj_pd['time_h'].max()
-time_intervals = np.linspace(time_min, time_max, num=index_num + 1)
-bin_mean = []
-for i in range(index_num):
-    bin_avg = \
-        traj_pd[np.logical_and(traj_pd['time_h'] >= time_intervals[i], traj_pd['time_h'] < time_intervals[i + 1])][
-            'fold_change']
-    bin_mean.append(np.mean(bin_avg))
-time_mean = []
-for i in range(index_num):
-    time_mean.append(np.mean([time_intervals[i], time_intervals[i + 1]]))
-
-fi2, ax = plt.subplots(1, 1)
-for cell in cells:
-    ax.plot(traj_pd[traj_pd['chamber'] == cell]['time_h'], traj_pd[traj_pd['chamber'] == cell]['fold_change'],
-            alpha=0.9,
-            ls='-', c='#CCD1D1', lw=1)
-ax.set_ylim(0.1, 100)
-ax.set_yscale('linear')
-ax.set_xlim(time_min, time_max)
-ax.plot(time_mean, bin_mean)
-ax.grid(False)
-fi2.show()
-
-# %%
-final_flu = []
-for cell in cells:
-    final_flu.append([ff_dfs[ff_dfs['chamber'] == cell]['green_mean'].values[-1],
-                      ff_dfs[ff_dfs['chamber'] == cell]['red_mean'].values[-1]])
-final_flu_pd = pd.DataFrame(final_flu)
-final_flu_pd['chamber'] = cells
-final_flu_pd.columns = pd.Index(['green_mean', 'red_mean', 'chamber'])
-fig4, ax = plt.subplots(1, 1)
-sns.histplot(x=final_flu_pd['red_mean'], y=final_flu_pd['green_mean'], bins=200, log_scale=True, ax=ax)
-ax.set_ylim(100, 20000)
-# ax.set_yscale('log')
-ax.set_xlim(100, 2000)
-# ax.set_xscale('log')
-fig4.show()
-# %% gaussian mixture
-from sklearn.mixture import GaussianMixture
-
-gm = GaussianMixture(n_components=6)
-gm.fit(final_flu_pd[['green_mean', 'red_mean']])
-predict = gm.predict(final_flu_pd[['green_mean', 'red_mean']])
-final_flu_pd['classify'] = predict
-fig4, ax = plt.subplots(1, 1)
-sns.histplot(x=final_flu_pd['red_mean'], y=final_flu_pd['green_mean'], bins=200, log_scale=True, ax=ax)
-ax.scatter(final_flu_pd[final_flu_pd['classify'] == 0]['red_mean'],
-           final_flu_pd[final_flu_pd['classify'] == 0]['green_mean'],
-           s=1, c='r')
-ax.set_ylim(100, 20000)
-# ax.set_yscale('log')
-ax.set_xlim(100, 2000)
-# ax.set_xscale('log')
-fig4.show()
-
-# %% PCA
-# ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
-# cells = list(set(ff_dfs['chamber'].values))
-# cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
-# data = []
-# for cell in tqdm(cells):
-#     data.append(ff_dfs[ff_dfs['chamber'] == cell]['green_mean']/ff_dfs[ff_dfs['chamber'] == cell]['red_mean'].astype(np.float))
-# data = np.array(data)
-# from sklearn.decomposition import PCA
-# pca = PCA(n_components=2)
-# pca.fit(data)
-
-
-# %%
-ff_dfs = ff_dfs[ff_dfs['red_medium'] > 0]
-ff_dfs = ff_dfs[ff_dfs['green_medium'] > 0]
-
-fig2, ax = plt.subplots(1, 1, figsize=(12, 10))
-sns.histplot(x=ff_dfs['red_mean'], y=ff_dfs['green_mean'],
-             log_scale=(True, True),
-             cbar=True,
-             cbar_kws=dict(shrink=.75),
-             pthresh=.1,
-             ax=ax)
-ax.set_xlabel('Rfp intensity (a.u.)')
-ax.set_ylabel('Gfp intensity (a.u.)')
-
-fig2.show()
-
-# %%
-df = pd.read_csv(r'H:\ZJW_CP\20201227\fov_41_statistic.csv')
-df = df[~np.isnan(df['green_mean'])]
-cells = list(set(df['chamber']))
-# df = df[df['chamber'] == 'ch_0']
-
-fig1, ax = plt.subplots(1, 2, figsize=(18, 10))
-for cell in cells:
-    ax[0].plot(df[df['chamber'] == cell]['time_s'],
-               df[df['chamber'] == cell]['green_mean'] / df[df['chamber'] == cell]['red_mean'], '--y')
-    # ax[0].plot(df[df['chamber'] == cell]['time_s'], df[df['chamber'] == cell]['red_mean'], '-r')
-# ax[0].set_ylim(100, 50000)
-ax[0].set_yscale('log')
-
-for cell in cells:
-    ax[1].scatter(df[df['chamber'] == cell]['red_mean'], df[df['chamber'] == cell]['green_mean'])
-ax[1].set_xscale('log')
-ax[1].set_xlim(100, 2000)
-ax[1].set_yscale('log')
-
-ax[1].set_ylim(100, 10000)
-
-fig1.show()
-
-# %%
-# df = pd.read_csv(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_55_statistic.csv')
-cells = list(set(dfs['chamber']))
-fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
-for cell in cells:
-    ax.plot(dfs[dfs['channel'] == cell]['time_h'], dfs[dfs['channel'] == cell]['area'])
-
-# ax.set_yscale('log')
-ax.set_xlim(dfs['time_h'].min() + np.ptp(dfs['time_h']) * 0.0,
-            dfs['time_h'].min() + np.ptp(dfs['time_h']) * 1)
-fig2.show()
-# fig1, ax = plt.subplots(1, 1)
+# fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
+# ax.hist(np.log(fd_dfs['area']), bins=100)
+# ax.set_xlabel('Cell area (log(pixels))')
+# ax.set_ylabel('Number')
+# fig1.show()
+# # %%
+#
+# # fig1, ax = plt.subplots(1, 2, figsize=(21*2, 10*2))
+# cells = list(set(fd_dfs['chamber']))
+# cells = np.random.choice(cells, 6)
+# fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
 # for cell in cells:
-#     ax.plot(df[df['channel'] == cell]['red_mean'], df[df['channel'] == cell]['green_mean'])
-# ax.set_xscale('log')
-# ax.set_xlim(100, 2000)
-# ax.set_yscale('log')
-# ax.set_ylim(100, 10000)
+#     ax.scatter(fd_dfs[fd_dfs['chamber'] == cell]['time_h'],
+#                fd_dfs[fd_dfs['chamber'] == cell]['area'],
+#                s=158)
+# ax.set_xlim(fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.2,
+#             fd_dfs['time_h'].min() + np.ptp(fd_dfs['time_h']) * 0.8)
+# ax.set_xlabel('Time (h)')
+# ax.set_ylabel('Cell size (pixels)')
+# fig2.show()
+#
+# # %% extract data with fluorescence information
+# ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
+# fig1, ax = plt.subplots(1, 2, figsize=(21, 10))
+# cells = list(set(ff_dfs['chamber']))
+# cells = np.random.choice(cells, 3)
+# for cell in cells:
+#     ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'],
+#                ff_dfs[ff_dfs['chamber'] == cell]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell]['red_mean'])
+#     # ax[0].plot(ff_dfs[ff_dfs['chamber'] == cell]['time_h'], ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], '-r')
+# # ax[0].set_ylim(100, 50000)
+# ax[0].set_yscale('log')
+# ax[0].set_xlim(0)
+# ax[0].set_xlabel('Time (h)')
+# ax[0].set_ylabel('Fold increase (gfp/rfp)')
+# ax[0].grid(False)
+#
+# for cell in cells:
+#     ax[1].scatter(ff_dfs[ff_dfs['chamber'] == cell]['red_mean'], ff_dfs[ff_dfs['chamber'] == cell]['green_mean'],
+#                   s=20)
+# ax[1].set_xscale('log')
+# ax[1].set_xlim(0.1, 5000)
+# ax[1].set_yscale('log')
+# ax[1].set_ylim(0.1, 15000)
+# ax[1].set_xlabel('Rfp intensity')
+# ax[1].set_ylabel('Gfp intensity')
+# ax[1].grid(False)
 # fig1.show()
 # %%
-db = load(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_1.jl')
-fig2, ax = plt.subplots(1, 1)
-ax.imshow(db['chamber_cells_mask']['ch_1'][5])
-
-fig2.show()
+# cells = np.array(list(set(ff_dfs['chamber'])))
+# cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 10 else False for cell in cells]
+# fc_list = []
+# for cell in tqdm(cells[cell_ints]):
+#     fc_i = ff_dfs[ff_dfs['chamber'] == cell].iloc[0]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[0][
+#         'red_mean']
+#     fc_f = ff_dfs[ff_dfs['chamber'] == cell].iloc[-1]['green_mean'] / ff_dfs[ff_dfs['chamber'] == cell].iloc[-1][
+#         'red_mean']
+#     fc = fc_i / fc_f
+#     fc_list.append(fc)
+#
+# fc = pd.DataFrame(data=dict(chamber=cells[cell_ints],
+#                             fold_change=fc_list))
+# fc = fc[~np.isinf(fc['fold_change'])]
+# fc = fc[fc['fold_change'] > 0]
+# fig3, ax = plt.subplots(1, 1, figsize=(12, 12))
+# sns.histplot(data=fc, x='fold_change', bins=200, log_scale=True, ax=ax)
+#
+# fig3.show()
+#
+# # %% BIN AVERGATE
+#
+# index_num = 99
+# ff_dfs.index = pd.Index(range(len(ff_dfs)))
+# ff_dfs['fold_change'] = ff_dfs['green_mean'] / ff_dfs['red_mean']
+# cells = list(set(ff_dfs['chamber']))
+# ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
+# ints_2 = [True if ff_dfs[ff_dfs['chamber'] == cell]['fold_change'].values[-1] < 4 else False for cell in cells]
+# cell_ints = np.logical_and(ints, ints_2)
+# cell_ints = np.where(cell_ints)[0]
+# cells = np.array(cells)
+# traj_mask = [True if cham in cells[list(cell_ints)] else False for cham in ff_dfs['chamber']]
+# traj_pd = ff_dfs[traj_mask]
+# time_min = traj_pd['time_h'].min()
+# time_max = traj_pd['time_h'].max()
+# time_intervals = np.linspace(time_min, time_max, num=index_num + 1)
+# bin_mean = []
+# for i in range(index_num):
+#     bin_avg = \
+#         traj_pd[np.logical_and(traj_pd['time_h'] >= time_intervals[i], traj_pd['time_h'] < time_intervals[i + 1])][
+#             'fold_change']
+#     bin_mean.append(np.mean(bin_avg))
+# time_mean = []
+# for i in range(index_num):
+#     time_mean.append(np.mean([time_intervals[i], time_intervals[i + 1]]))
+#
+# fi2, ax = plt.subplots(1, 1)
+# for cell in cells:
+#     ax.plot(traj_pd[traj_pd['chamber'] == cell]['time_h'], traj_pd[traj_pd['chamber'] == cell]['fold_change'],
+#             alpha=0.9,
+#             ls='-', c='#CCD1D1', lw=1)
+# ax.set_ylim(0.1, 100)
+# ax.set_yscale('linear')
+# ax.set_xlim(time_min, time_max)
+# ax.plot(time_mean, bin_mean)
+# ax.grid(False)
+# fi2.show()
+#
+# # %%
+# final_flu = []
+# for cell in cells:
+#     final_flu.append([ff_dfs[ff_dfs['chamber'] == cell]['green_mean'].values[-1],
+#                       ff_dfs[ff_dfs['chamber'] == cell]['red_mean'].values[-1]])
+# final_flu_pd = pd.DataFrame(final_flu)
+# final_flu_pd['chamber'] = cells
+# final_flu_pd.columns = pd.Index(['green_mean', 'red_mean', 'chamber'])
+# fig4, ax = plt.subplots(1, 1)
+# sns.histplot(x=final_flu_pd['red_mean'], y=final_flu_pd['green_mean'], bins=200, log_scale=True, ax=ax)
+# ax.set_ylim(100, 20000)
+# # ax.set_yscale('log')
+# ax.set_xlim(100, 2000)
+# # ax.set_xscale('log')
+# fig4.show()
+# # %% gaussian mixture
+# from sklearn.mixture import GaussianMixture
+#
+# gm = GaussianMixture(n_components=6)
+# gm.fit(final_flu_pd[['green_mean', 'red_mean']])
+# predict = gm.predict(final_flu_pd[['green_mean', 'red_mean']])
+# final_flu_pd['classify'] = predict
+# fig4, ax = plt.subplots(1, 1)
+# sns.histplot(x=final_flu_pd['red_mean'], y=final_flu_pd['green_mean'], bins=200, log_scale=True, ax=ax)
+# ax.scatter(final_flu_pd[final_flu_pd['classify'] == 0]['red_mean'],
+#            final_flu_pd[final_flu_pd['classify'] == 0]['green_mean'],
+#            s=1, c='r')
+# ax.set_ylim(100, 20000)
+# # ax.set_yscale('log')
+# ax.set_xlim(100, 2000)
+# # ax.set_xscale('log')
+# fig4.show()
+#
+# # %% PCA
+# # ff_dfs = fd_dfs[~np.isnan(fd_dfs['green_mean'])]
+# # cells = list(set(ff_dfs['chamber'].values))
+# # cell_ints = [True if ff_dfs[ff_dfs['chamber'] == cell]['time_h'].max() > 40 else False for cell in cells]
+# # data = []
+# # for cell in tqdm(cells):
+# #     data.append(ff_dfs[ff_dfs['chamber'] == cell]['green_mean']/ff_dfs[ff_dfs['chamber'] == cell]['red_mean'].astype(np.float))
+# # data = np.array(data)
+# # from sklearn.decomposition import PCA
+# # pca = PCA(n_components=2)
+# # pca.fit(data)
+#
+#
+# # %%
+# ff_dfs = ff_dfs[ff_dfs['red_medium'] > 0]
+# ff_dfs = ff_dfs[ff_dfs['green_medium'] > 0]
+#
+# fig2, ax = plt.subplots(1, 1, figsize=(12, 10))
+# sns.histplot(x=ff_dfs['red_mean'], y=ff_dfs['green_mean'],
+#              log_scale=(True, True),
+#              cbar=True,
+#              cbar_kws=dict(shrink=.75),
+#              pthresh=.1,
+#              ax=ax)
+# ax.set_xlabel('Rfp intensity (a.u.)')
+# ax.set_ylabel('Gfp intensity (a.u.)')
+#
+# fig2.show()
+#
+# # %%
+# df = pd.read_csv(r'H:\ZJW_CP\20201227\fov_41_statistic.csv')
+# df = df[~np.isnan(df['green_mean'])]
+# cells = list(set(df['chamber']))
+# # df = df[df['chamber'] == 'ch_0']
+#
+# fig1, ax = plt.subplots(1, 2, figsize=(18, 10))
+# for cell in cells:
+#     ax[0].plot(df[df['chamber'] == cell]['time_s'],
+#                df[df['chamber'] == cell]['green_mean'] / df[df['chamber'] == cell]['red_mean'], '--y')
+#     # ax[0].plot(df[df['chamber'] == cell]['time_s'], df[df['chamber'] == cell]['red_mean'], '-r')
+# # ax[0].set_ylim(100, 50000)
+# ax[0].set_yscale('log')
+#
+# for cell in cells:
+#     ax[1].scatter(df[df['chamber'] == cell]['red_mean'], df[df['chamber'] == cell]['green_mean'])
+# ax[1].set_xscale('log')
+# ax[1].set_xlim(100, 2000)
+# ax[1].set_yscale('log')
+#
+# ax[1].set_ylim(100, 10000)
+#
+# fig1.show()
+#
+# # %%
+# # df = pd.read_csv(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_55_statistic.csv')
+# cells = list(set(dfs['chamber']))
+# fig2, ax = plt.subplots(1, 1, figsize=(18, 10))
+# for cell in cells:
+#     ax.plot(dfs[dfs['channel'] == cell]['time_h'], dfs[dfs['channel'] == cell]['area'])
+#
+# # ax.set_yscale('log')
+# ax.set_xlim(dfs['time_h'].min() + np.ptp(dfs['time_h']) * 0.0,
+#             dfs['time_h'].min() + np.ptp(dfs['time_h']) * 1)
+# fig2.show()
+# # fig1, ax = plt.subplots(1, 1)
+# # for cell in cells:
+# #     ax.plot(df[df['channel'] == cell]['red_mean'], df[df['channel'] == cell]['green_mean'])
+# # ax.set_xscale('log')
+# # ax.set_xlim(100, 2000)
+# # ax.set_yscale('log')
+# # ax.set_ylim(100, 10000)
+# # fig1.show()
+# # %%
+# db = load(r'X:\chupan\mother machine\20201225_NCM_pECJ3_M5_L3\fov_1.jl')
+# fig2, ax = plt.subplots(1, 1)
+# ax.imshow(db['chamber_cells_mask']['ch_1'][5])
+#
+# fig2.show()
