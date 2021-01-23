@@ -244,7 +244,7 @@ class MomoFov:
             return None
         # --------------------- input all phase images --------------------------------------
         _ = Parallel(n_jobs=30, require='sharedmem')(
-            delayed(parallel_input)(fn, i) for i, fn in tqdm(enumerate(self.times['phase'])))
+            delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
 
         print(f'{self.fov_name}: ims shape is {self.phase_ims.shape}.')
         # --------------------- input all phase images --------------------------------------
@@ -427,6 +427,7 @@ class MomoFov:
         return None
 
     def dump_data(self, compress=True):
+        print(f"Now, {self.fov_name}: dump memory data.\n")
         self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
@@ -463,8 +464,7 @@ class MomoFov:
         self.extract_mother_cells_features()
         print(f"Now, {self.fov_name}: get mother cells data.\n")
         self.parse_mother_cell_data()
-        print(f"Now, {self.fov_name}: dump memory data.\n")
-        self.dump_data()
+        # self.dump_data()
         return None
 
 

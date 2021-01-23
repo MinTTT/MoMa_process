@@ -87,28 +87,8 @@ def get_growth_rate(cell_df, **kwargs):
     return np.array([time_all, rate_all]).T
 
 
-def binned_average(bin_ref, high_imdata, num=100):
-    """
-    get binned average and standard
-    :param bin_ref:
-    :param high_imdata:
-    :param num:
-    :return:
-    """
 
-    binned_num = num
-    binned_time = bin_ref
-    gr = high_imdata
-    bins = np.linspace(binned_time.min(), binned_time.max(), num=binned_num + 1)
-    index = np.searchsorted(bins, binned_time, side='right')
-
-    binned_time_avg = np.array([np.average(binned_time[index == binned_i + 1]) for binned_i in range(binned_num)])
-    binned_gr_avg = np.array([np.average(gr[index == binned_i + 1]) for binned_i in range(binned_num)])
-    binned_gr_std = np.array([np.std(gr[index == binned_i + 1]) for binned_i in range(binned_num)])
-    return [binned_time_avg, binned_gr_avg, binned_gr_std]
-
-
-def binned_average2(mat, num=100):
+def binned_average(mat, num=100, std=True, classify_only=False):
     """
     get binned average and standard
 
@@ -119,15 +99,24 @@ def binned_average2(mat, num=100):
     binned_num = num
     binned_time = mat[:, 0]
     # gr = high_imdata
-    bins = np.linspace(binned_time.min(), binned_time.max(), num=binned_num + 1)
+    bins = np.linspace(binned_time.min(), binned_time.max(), num=binned_num, endpoint=False)
     index = np.searchsorted(bins, binned_time, side='right')
     # binned_avg = np.array(Parallel(n_jobs=8, backend='threading')(delayed(np.average)(mat[index == binned_i + 1, :], axis=0)
     #                                           for binned_i in range(binned_num)))
     # binned_std = np.array(Parallel(n_jobs=8, backend='threading')(delayed(np.std)(mat[index == binned_i + 1, :], axis=0)
     #                                           for binned_i in range(binned_num)))
     binned_avg = np.array([np.average(mat[index == binned_i + 1, :], axis=0) for binned_i in range(binned_num)])
-    binned_std = np.array([np.std(mat[index == binned_i + 1, :], axis=0) for binned_i in range(binned_num)])
-    return [binned_avg, binned_std]
+    if classify_only:
+        ref_avg = np.zeros(len(binned_time))
+        for binned_i in range(binned_num):
+            ref_avg[index == binned_i + 1] = binned_avg[binned_i, 0]
+        mat[:, 0] = ref_avg
+        return mat
+
+    if std:
+        binned_std = np.array([np.std(mat[index == binned_i + 1, :], axis=0) for binned_i in range(binned_num)])
+        return [binned_avg, binned_std]
+    return binned_avg
 
 
 # @dask.delayed
@@ -135,18 +124,17 @@ def daskdf_parse(df, keys, na):
     return df[df[keys] == na]
 
 
-# %%
-ps = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3\mothers_raw_dic.jl'
+# %% load statistic data
+ps = r'./test_data_set/csv_data/mothers_raw_dic.jl'
 # cells_df = cells_df.compute()
 cells_df = load(ps)
 cells_name = list(cells_df.keys())
 # %% filter data
-cells_growth_rate = Parallel(n_jobs=1000, backend='threading')(
+print('calculate instantaneous growth.')
+cells_growth_rate = Parallel(n_jobs=64, backend='threading')(
     delayed(get_growth_rate)(cells_df[cn]) for cn in tqdm(cells_name))
 cells_growth_rate = {cn: cells_growth_rate[i] for i, cn in tqdm(enumerate(cells_name))}
-# results = dask.delayed(dict)([(cn, dask.delayed(get_growth_rate)(cells_df[cn])) for cn in tqdm(cells_name)])
-# cells_growth_rate = results.compute()
-# cells_growth_rate = {cn: get_growth_rate(fd_dfs, cn) for cn in tqdm(cells_name)}
+
 cells_growth_rate = {cn: cells_growth_rate[cn] for cn in cells_name
                      if isinstance(cells_growth_rate[cn], np.ndarray)}
 gr_array = [cells_growth_rate[na] for na in tqdm(list(cells_growth_rate.keys())) if
@@ -156,7 +144,7 @@ gr_array = np.vstack(gr_array)
 bin_num = 250
 time = gr_array[:, 0]
 gr = gr_array[:, 1]
-avg, std = binned_average2(gr_array, bin_num)
+avg, std = binned_average(gr_array, bin_num)
 time_avg = avg[:, 0]
 gr_avg = avg[:, 1]
 gr_std = std[:, 1]
@@ -180,10 +168,10 @@ ax.set_xlabel('Time (h)')
 ax.set_ylabel('Growth rate (1/h)')
 fig1.show()
 # %% binned 4
-
+print("classify growth type.")
 cells_name = list(cells_growth_rate.keys())
 four_binned = Parallel(n_jobs=1000, backend='threading')(
-    delayed(list)(binned_average2(cells_growth_rate[cn], num=4)[0][:, 1])
+    delayed(list)(binned_average(cells_growth_rate[cn], num=4, std=False)[:, 1])
     for cn in tqdm(cells_name))
 # four_binned = [list(binned_average(cells_growth_rate[cn][:, 0], cells_growth_rate[cn][:, 1], num=4)[1])
 #                for cn in cells_name]
@@ -195,21 +183,21 @@ from sklearn.cluster import KMeans
 km_model = KMeans(n_clusters=3, random_state=4).fit(four_binned)
 km_label = km_model.labels_
 colors_4 = ['#DBB38F', '#91DB8F', '#8FB7DB', '#D98FDB']  # brown, green, blue, violet
-fig3, ax = plt.subplots(1, 1)
+fig2, ax2 = plt.subplots(1, 1)
 for label in range(4):
     color = colors_4[label]
     masked_data = four_binned[km_label == label, :]
-    ax.scatter(masked_data[:, 0], masked_data[:, -1], color=color)
-ax.set_xlabel('Growth rate (before shift)')
-ax.set_ylabel('Growth rate (after shift)')
-fig3.show()
+    ax2.scatter(masked_data[:, 0], masked_data[:, -1], color=color)
+ax2.set_xlabel('Growth rate (before shift)')
+ax2.set_ylabel('Growth rate (after shift)')
+fig2.show()
 clfd_cells = []
 for i in range(3):
     clfd_chamber = np.where(km_label == i)[0]
     clfd_cells.append([cells_name[ind] for ind in clfd_chamber])
 
 # plot classified
-fig4, axes = plt.subplots(3, 1, figsize=(15, 15))
+fig3, axes = plt.subplots(3, 1, figsize=(15, 15))
 for i, ax in enumerate(axes):
     clfd_chamber = np.where(km_label == i)[0]
     clfd_chamber = [cells_name[ind] for ind in clfd_chamber]
@@ -218,9 +206,10 @@ for i, ax in enumerate(axes):
     gr_array = np.vstack(gr_array)
     # binned average
     bin_num = 250
-    time = gr_array[:, 0]
-    gr = gr_array[:, 1]
-    time_avg, gr_avg, gr_std = binned_average(time, gr, bin_num)
+    _avg, _std = binned_average(gr_array, bin_num)
+    time_avg, gr_avg = _avg[:, 0], _avg[:, 1]
+    time_std, gr_std = _std[:, 0], _std[:, 1]
+
     std_up = gr_avg + gr_std
     std_down = gr_avg - gr_std
     cells = np.random.choice(clfd_chamber, 10)
@@ -236,11 +225,11 @@ for i, ax in enumerate(axes):
     ax.set_ylim(-80, 220)
     ax.set_xlabel('Time (h)')
     ax.set_ylabel('Growth rate (1/h)')
-fig4.show()
+fig3.show()
 
 # %%
 fluor_binnum = 100
-clfd_cell = clfd_cells[1]
+clfd_cell = clfd_cells[0]
 cells_green = []
 cells_red = []
 cells_time = []
@@ -257,60 +246,93 @@ cells_green = np.vstack(cells_green)
 # cells_red = np.vstack(cells_red)
 # cells_time = np.vstack(cells_time)
 
-mean_flu, std = binned_average2(cells_green[:, -1::-1], num=fluor_binnum)
+mean_flu, std = binned_average(cells_green[:, -1::-1], num=fluor_binnum)
 bred_mean = mean_flu[:, 1]
 bgreen_mean = mean_flu[:, -1]
 # _, bred_mean, bred_std = binned_average(cells_time, cells_red, num=fluor_binnum)
 
-fig5, ax = plt.subplots(1, 1)
+fig4, ax = plt.subplots(1, 1)
 sld_cells = np.random.choice(clfd_cell, 4)
 for cell in tqdm(sld_cells):
     cell_data = cells_df[cell]
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
     ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
 ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
-# ax.scatter(bred_mean, bgreen_mean, s=30, color='#3498DB')
+ax.plot(bred_mean, bgreen_mean, lw=2, color='#3498DB')
 ax.set_xscale('log')
 ax.set_yscale('log')
 ax.set_ylabel('GFP intensity (a.u.)')
 ax.set_xlabel('mCherry intensity (a.u.)')
 ax.set_ylim(2, 3000)
 ax.set_xlim(2, 6000)
-fig5.show()
+fig4.show()
 
 # %%
-bin_num = 8
-binned_fluor = np.zeros((len(clfd_cell), bin_num))
-
+bin_num = 11
+binned_fold_change = np.zeros((len(clfd_cell), bin_num))
+binned_green = np.zeros((len(clfd_cell), bin_num))
+binned_red = np.zeros((len(clfd_cell), bin_num))
+binned_total_flu = np.zeros((len(clfd_cell), bin_num))
 
 def flu_binned(index, cn):
+    # g_max, r_max = flu_cells_dict[cn]['green_medium'].max(), flu_cells_dict[cn]['red_medium'].max()
     green_over_red = (flu_cells_dict[cn]['green_medium'] + 1) / (flu_cells_dict[cn]['red_medium'] + 1)
     green_over_red = green_over_red.values.reshape(-1, 1)
-    data = np.hstack([flu_cells_dict[cn]['time_h'].values.reshape(-1, 1), green_over_red])
-    binned_fluor[index, :] = binned_average2(data, bin_num)[0][:, 1]
-
+    total_flu = flu_cells_dict[cn]['green_medium'] + flu_cells_dict[cn]['red_medium']
+    data = np.hstack([flu_cells_dict[cn][['time_h', 'green_medium', 'red_medium']].values, 
+                      green_over_red,
+                      total_flu.values.reshape(-1, 1)])
+    binned = binned_average(data, bin_num, std=False)
+    binned_fold_change[index, :] = binned[:, 3]
+    binned_green[index, :] = binned[:, 1]
+    binned_red[index, :] = binned[:, 2]
+    binned_total_flu[index, :] = binned[:, 4]
 
 _ = Parallel(n_jobs=32, backend='threading')(delayed(flu_binned)(index, cn) for index, cn in enumerate(tqdm(clfd_cell)))
 
-log_bin_flu = np.log(binned_fluor)
+fig5, ax5 = plt.subplots(1, 1)
+# ax8.scatter(binned_red[:, -1], binned_green[:, -1])
+sns.histplot(x=binned_red[:, -1], y=binned_green[:, -1], ax=ax5)
+fig5.show()
+
+green_mean, green_std = binned_green[:, -1].mean(), binned_green[:, -1].std()
+red_mean, red_std = binned_red[:, -1].mean(), binned_red[:, -1].std()
+
+mask_otler = np.where(np.logical_and(binned_green[:, -1] <= 1.5 * green_std + green_mean,
+                               binned_red[:, -1] <= 1.0 * red_std + red_mean), True, False)
+sub_clf_cells = [clfd_cell[i] for i in np.arange(len(clfd_cell))[mask_otler]]
+
+fig6, ax6 = plt.subplots(1, 1)
+# ax8.scatter(binned_red[:, -1], binned_green[:, -1])
+sns.histplot(x=binned_red[:, -1][mask_otler], y=binned_green[:, -1][mask_otler], ax=ax6)
+fig6.show()
+
+log_bin_flu = np.log(binned_fold_change)
+
+sub_log_bin_flu = log_bin_flu[mask_otler, :]
+
+# %%
 print('Modeling Fitting.')
-km_model2 = KMeans(2, random_state=3).fit(log_bin_flu[:, -4:-1])
+km_model2 = KMeans(2, random_state=3).fit(sub_log_bin_flu[:, -3:-1])
 km_label2 = km_model2.labels_
 
-fig6, ax = plt.subplots(1, 1)
+fig7, ax = plt.subplots(1, 1)
 for i in list(set(km_label2)):
-    ax.scatter(binned_fluor[km_label2 == i, :][:, -2], binned_fluor[km_label2 == i, :][:, -1])
-# ax.scatter(binned_fluor[km_label2 == 1, :][:, 2], binned_fluor[km_label2 == 1, :][:, 3])
+    ax.scatter(binned_fold_change[mask_otler][km_label2 == i, :][:, -2],
+               binned_fold_change[mask_otler][km_label2 == i, :][:, -1])
+
 ax.set_xlim(1e-3, 30)
 ax.set_ylim(1e-2, 35)
 ax.set_xscale('log')
 ax.set_yscale('log')
-fig6.show()
+fig7.show()
 
-fig7, ax = plt.subplots(1, 1)
+sub_clf_cells_name = {}
+fig8, ax = plt.subplots(1, 1)
 for label in list(set(km_label2)):
     mask = km_label2 == label
-    selected_cell = [clfd_cell[i] for i in np.arange(len(km_label2))[mask]]
+    selected_cell = [sub_clf_cells[i] for i in np.arange(len(km_label2))[mask]]
+    sub_clf_cells_name[label] = selected_cell
     cells = np.random.choice(selected_cell, 20)
     for cell in cells:
         ax.plot(flu_cells_dict[cell]['red_medium'], flu_cells_dict[cell]['green_medium'], color=colors_4[label])
@@ -320,26 +342,103 @@ ax.set_ylabel('GFP intensity (a.u.)')
 ax.set_xlabel('mCherry intensity (a.u.)')
 ax.set_ylim(2, 3000)
 ax.set_xlim(2, 6000)
-fig7.show()
+fig8.show()
+
+sub_clf_data = {}
+sub_clf_bin_mean_data = {}
+sub_clf_bin_std_data = {}
 
 num_ax = len(list(set(km_label2)))
-fig8, ax = plt.subplots(num_ax, 1, figsize=(8, 12*num_ax))
+fig9, ax = plt.subplots(1, num_ax, figsize=(10 * num_ax, 8))
 for label in list(set(km_label2)):
-    mask = km_label2 == label
-    selected_cell = [clfd_cell[i] for i in np.arange(len(km_label2))[mask]]
+    selected_cell = sub_clf_cells_name[label]
     cells = np.random.choice(selected_cell, 20)
     for cell in cells:
         ax[label].plot(flu_cells_dict[cell]['red_medium'], flu_cells_dict[cell]['green_medium'], **grey_color)
+    ax[label].plot(flu_cells_dict[cell]['red_medium'], flu_cells_dict[cell]['green_medium'], **orange_color)
     data = np.vstack([flu_cells_dict[cn][['time_h', 'green_medium', 'red_medium']].values for cn in selected_cell])
-    binned_avg, _ = binned_average2(data, 50)
-    ax[label].scatter(binned_avg[:, 2], binned_avg[:, 1])
+    sub_clf_data[label] = data
+    binned_avg, binned_std = binned_average(data, 50)
+    sub_clf_bin_std_data[label] = binned_std
+    sub_clf_bin_mean_data[label] = binned_avg
+    ax[label].plot(binned_avg[:, 2], binned_avg[:, 1], colors_4[label])
     ax[label].set_xscale('log')
     ax[label].set_yscale('log')
     ax[label].set_ylabel('GFP intensity (a.u.)')
     ax[label].set_xlabel('mCherry intensity (a.u.)')
     ax[label].set_ylim(2, 3000)
     ax[label].set_xlim(2, 6000)
-fig8.show()
+fig9.show()
+
+fig10, axes9 = plt.subplots(1, 2, figsize=(12*2, 10))
+for i, ax10 in enumerate(axes9):
+    binned_avg = sub_clf_bin_mean_data[i]
+    ax10.plot(binned_avg[:, 0], binned_avg[:, 1], 'g')
+    ax10.plot(binned_avg[:, 0], binned_avg[:, 2], 'r')
+    ax10.errorbar(binned_avg[:, 0], binned_avg[:, 1], binned_std[:, 1])
+    ax10.errorbar(binned_avg[:, 0], binned_avg[:, 2], binned_std[:, 2])
+    ax10.scatter(binned_avg[:, 0], binned_avg[:, 1])
+    ax10.scatter(binned_avg[:, 0], binned_avg[:, 2])
+    ax10.set_xlabel('Time (h)')
+    # ax10.set_yscale('log')
+    ax10.set_ylabel('Fluorescent intensity (a.u.)')
+    ax10.set_ylim(-10, 2000)
+fig10.show()
+
+classify_data = binned_average(sub_clf_data[0], classify_only=True)
+
+temp_daf = pd.DataFrame(data=classify_data, columns=['time', 'green', 'red'])
+temp_daf = temp_daf[temp_daf['time'] > 75]
+
+fig11, ax11 = plt.subplots(1, 1)
+sns.stripplot(data=temp_daf[temp_daf['time'] > 75], x='time', y='red', ax=ax11)
+sns.violinplot(data=temp_daf, x='time', y='red', ax=ax11)
+labels = list(set(temp_daf['time']))
+labels.sort()
+labels = ['%.2f' % lb for lb in labels]
+ax11.set_xticks(np.arange(len(labels)))
+ax11.set_xticklabels(labels)
+fig11.show()
+
+
+
+
+fig12, axes12 = plt.subplots(1, 2, figsize=(12*2, 10))
+for i, ax12 in enumerate(axes12):
+    sub_gr = np.vstack([cells_growth_rate[cn] for cn in sub_clf_cells_name[i]])
+    binned_sub_gr_mean, binned_sub_gr_std = binned_average(sub_gr, num=50)
+    binned_avg = binned_sub_gr_mean
+    ax12.plot(binned_sub_gr_mean[:, 0], binned_avg[:, 1], 'g')
+    # ax11.plot(binned_avg[:, 0], binned_avg[:, 2], 'r')
+    ax12.errorbar(binned_avg[:, 0], binned_avg[:, 1], binned_sub_gr_std[:, 1])
+    # ax12.errorbar(binned_avg[:, 0], binned_avg[:, 2], binned_std[:, 2])
+    ax12.scatter(binned_sub_gr_mean[:, 0], binned_avg[:, 1])
+    # ax12.scatter(binned_avg[:, 0], binned_avg[:, 2])
+    ax12.set_xlabel('Time (h)')
+    # ax12.set_yscale('log')
+    ax12.set_ylabel('Growth rate (1/h)')
+    ax12.set_ylim(-40, 150)
+fig12.show()
+
+
+
+fig13, ax13 = plt.subplots(1, 1, figsize=(12*2, 10))
+for i in list(sub_clf_cells_name.keys()):
+    sub_gr = np.vstack([cells_growth_rate[cn] for cn in sub_clf_cells_name[i]])
+    binned_sub_gr_mean, binned_sub_gr_std = binned_average(sub_gr, num=50)
+    binned_avg = binned_sub_gr_mean
+    ax13.plot(binned_sub_gr_mean[:, 0], binned_avg[:, 1], color=colors_4[i])
+    # ax13.plot(binned_avg[:, 0], binned_avg[:, 2], 'r')
+    ax13.errorbar(binned_avg[:, 0], binned_avg[:, 1], binned_sub_gr_std[:, 1], color=colors_4[i])
+    # ax13.errorbar(binned_avg[:, 0], binned_avg[:, 2], binned_std[:, 2])
+    ax13.scatter(binned_sub_gr_mean[:, 0], binned_avg[:, 1], color=colors_4[i])
+    # ax13.scatter(binned_avg[:, 0], binned_avg[:, 2])
+    ax13.set_xlabel('Time (h)')
+    # ax13.set_yscale('log')
+    ax13.set_ylabel('Growth rate (1/h)')
+    ax13.set_ylim(-40, 150)
+fig13.show()
+
 # %% show distribution of all cells' size
 # fig1, ax = plt.subplots(1, 1, figsize=(12, 10))
 # ax.hist(np.log(fd_dfs['area']), bins=100)
