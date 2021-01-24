@@ -72,13 +72,4 @@ if __name__ == '__main__':
 
     dump(cells_dict, os.path.join(DIR, 'mothers_raw_dic.jl'), compress='lz4')
 
-# with ProgressBar():
-#     al_df = dask.compute(*all_scv, scheduler='threads')
-#
-# dfs = pd.concat(al_df)
-# dfs.index = pd.Index(range(len(dfs)))
-# dfs['time_h'] = [convert_time(s) for s in dfs['time_s'] - min(dfs['time_s'])]
-#
-# fd_dfs = dfs[dfs['area'] > 100]
-# print(f'''all chambers {len(list(set(fd_dfs['chamber'])))}''')
-# fd_dfs.to_csv(os.path.join(DIR, 'all_data.csv'))
+

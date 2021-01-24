@@ -226,7 +226,7 @@ class MomoFov:
         This function used to detect frame shift.
         :return:
         """
-        print(f'{self.fov_name}:loading phase images. \n')
+        print(f'[{self.fov_name}] -> loading phase images. \n')
         self.phase_ims = np.zeros((len(self.times['phase']),) + self.template_frame.shape)
         self.time_points['phase'] = [False] * len(self.times['phase'])
         self.rotation = [None] * len(self.times['phase'])
@@ -244,7 +244,7 @@ class MomoFov:
         _ = Parallel(n_jobs=30, require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
 
-        print(f'{self.fov_name}: ims shape is {self.phase_ims.shape}.')
+        print(f'[{self.fov_name}] -> ims shape is {self.phase_ims.shape}.')
         # --------------------- input all phase images --------------------------------------
         driftcorbox = dict(xtl=0,
                            xbr=None,
@@ -276,8 +276,8 @@ class MomoFov:
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
         self.chamber_graylevel = chamber_graylevel
-        print(chamber_graylevel)
-        print(f'{self.fov_name}: detect chamber loaded number: {len(self.loaded_chamber_box)}.')
+        # print(f'[{self.fov_name}] -> , chamber_graylevel)
+        print(f'[{self.fov_name}] -> detect chamber loaded number: {len(self.loaded_chamber_box)}.')
 
     def cell_detection(self):
         seg_inputs = ()
@@ -431,7 +431,7 @@ class MomoFov:
         return None
 
     def dump_data(self, compress=True):
-        print(f"Now, {self.fov_name}: dump memory data.\n")
+        print(f"[{self.fov_name}] -> dump memory data.\n")
         self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
@@ -458,16 +458,16 @@ class MomoFov:
         return None
 
     def process_flow_GPU(self):
-        print(f'Now, {self.fov_name}: detect channels.\n')
+        print(f'[{self.fov_name}] -> detect channels.\n')
         self.detect_channels()
-        print(f'Now, {self.fov_name}: detect frameshift.\n')
+        print(f'[{self.fov_name}] -> detect frameshift.\n')
         self.detect_frameshift()
-        print(f'Now, {self.fov_name}: detect cells.\n')
+        print(f'[{self.fov_name}] -> detect cells.\n')
         self.cell_detection()
     def process_flow_CPU(self):
-        print(f"Now, {self.fov_name}: extract cells' features.\n")
+        print(f"[{self.fov_name}] -> extract cells' features.\n")
         self.extract_mother_cells_features()
-        print(f"Now, {self.fov_name}: get mother cells data.\n")
+        print(f"[{self.fov_name}] -> get mother cells data.\n")
         self.parse_mother_cell_data()
         self.dump_data()
         return None
@@ -505,26 +505,3 @@ if __name__ == '__main__':
         print(f'Processing {i + 1}/{len(untreated)}')
         fov.process_flow()
         del untreated[i]
-
-# %%
-#
-# jldb = load(os.path.join(DIR, 'fov_90.jl'))
-#
-# # %%
-# print(jldb.loaded_chamber_name)
-# fig1, ax = plt.subplots(1, 1)
-# im = jldb.chamber_cells_mask['ch_8'][18]
-# print(np.mean(im))
-# ax.imshow(im)
-# fig1.show()
-# # %%
-#
-# num_time = len(fov.time_points)
-# sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
-# selected_ims = jldb.phase_ims[sample_index, ...]
-# cells_threshold = 0.30
-# chamber_loaded = []
-# for box in jldb.chamberboxes:
-#     half_chambers = selected_ims[:, box['ytl']:int(box['ybr'] - box['ytl'] / 2 + box['ytl']), box['xtl']:box['xbr']]
-#     mean_chamber = np.mean(half_chambers)
-#     print(mean_chamber)
