@@ -30,13 +30,11 @@ from utils.delta.utilities import getChamberBoxes, getDriftTemplate, driftcorr, 
 from joblib import Parallel, dump, delayed
 from utils.rotation import rotate_fov, rotate_image
 from utils.signal import vertical_mean
-import dask
-# dask.config.set(pool=ThreadPool(64))
-from dask.distributed import Client, progress
-from dask.diagnostics import ProgressBar
-
-
-client = Client(threads_per_worker=64, n_workers=12)
+# import dask
+# # dask.config.set(pool=ThreadPool(64))
+# from dask.distributed import Client, progress
+# from dask.diagnostics import ProgressBar
+# client = Client(threads_per_worker=64, n_workers=1)
 
 # Allow memory growth for the GPU
 # physical_devices = tf.config.experimental.list_physical_devices('GPU')
@@ -294,7 +292,7 @@ class MomoFov:
         self.chamber_seg = seg_inputs
         # Format into 4D tensor
         # Run segmentation U-Net:
-        seg = model_seg.predict(seg_inputs, verbose=1)
+        seg = model_seg.predict(seg_inputs)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
 
         # -------------- reform the size-------------- TODO: parallel 1
@@ -306,8 +304,11 @@ class MomoFov:
             ori_frames = np.empty([len(self.times['phase']), box['ybr'] - box['ytl'], box['xbr'] - box['xtl']]).astype(
                 np.uint16)
 
-            rerange_mask = [dask.delayed(parallel_rearange_mask)(t, m) for t in range(len(self.times['phase']))]
-            _ = dask.compute(*rerange_mask, scheduler='threads')
+            # rerange_mask = [dask.delayed(parallel_rearange_mask)(t, m) for t in range(len(self.times['phase']))]
+            # _ = dask.compute(*rerange_mask)
+
+            _ = Parallel(n_jobs=64, require='sharedmem')(delayed(parallel_rearange_mask)(t, m)
+                                                         for t in range(len(self.times['phase'])))
 
             self.chamber_cells_mask[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_frames
         # -------------- get cells contour ------------
@@ -355,11 +356,14 @@ class MomoFov:
                     red_time_points[time] = time_point
             return time
 
-        parall_results = [dask.delayed(parallel_flur_seg)(inx_t, time) for inx_t, time in
-                          enumerate(self.times['phase'])]
-        print(f'Now, {self.fov_name}: loading fluorescent images.')
-        with ProgressBar():
-            _ = dask.compute(*parall_results, scheduler='threads')
+        # parall_results = [dask.delayed(parallel_flur_seg)(inx_t, time) for inx_t, time in
+        #                   enumerate(self.times['phase'])]
+        # print(f'Now, {self.fov_name}: loading fluorescent images.')
+        # with ProgressBar():
+        #     _ = dask.compute(*parall_results)
+
+        _ = Parallel(n_jobs=128, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
+                                                     for inx_t, time in enumerate(tqdm(self.times['phase'])))
 
         self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
         self.time_points['red'] = [red_time_points[i] for i in self.times['red']]
@@ -453,18 +457,19 @@ class MomoFov:
             dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lz4')
         return None
 
-    def process_flow(self):
+    def process_flow_GPU(self):
         print(f'Now, {self.fov_name}: detect channels.\n')
         self.detect_channels()
         print(f'Now, {self.fov_name}: detect frameshift.\n')
         self.detect_frameshift()
         print(f'Now, {self.fov_name}: detect cells.\n')
         self.cell_detection()
+    def process_flow_CPU(self):
         print(f"Now, {self.fov_name}: extract cells' features.\n")
         self.extract_mother_cells_features()
         print(f"Now, {self.fov_name}: get mother cells data.\n")
         self.parse_mother_cell_data()
-        # self.dump_data()
+        self.dump_data()
         return None
 
 

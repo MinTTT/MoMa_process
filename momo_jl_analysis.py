@@ -19,9 +19,9 @@ from joblib import load
 import cv2
 from matplotlib import pylab
 from tqdm import tqdm
-import dask
-from dask.distributed import Client
-client = Client(n_workers=16, threads_per_worker=32)
+# import dask
+# from dask.distributed import Client
+# client = Client(n_workers=16, threads_per_worker=32)
 
 def draw_contour(ch=None, ch_name=None,channel='phase',time=0, fov_jl=None):
     """
@@ -70,7 +70,7 @@ def draw_contour(ch=None, ch_name=None,channel='phase',time=0, fov_jl=None):
         ims_with_cnt.append(
             cv2.drawContours(to_BGR(rangescale(channel_im[i], (0, 255)).astype(np.uint8)), cts, -1,
                              (247, 220, 111),
-                             1))
+                             2))
     ims_with_cnt = np.concatenate(ims_with_cnt, axis=1)
     return ims_with_cnt
 
@@ -115,11 +115,12 @@ def rangescale(frame, rescale):
     return frame
 
 #%%
-DIR = r'D:\python_code\MoMa_process\test_data_set\jl_data'
+DIR = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3'
 jl_file = find_jl(DIR)
 fov_jl = load(jl_file[-1])
 
 #%%
-ims_with_cnt = draw_contour(ch=4, channel='gree', time=[200, 209], fov_jl=fov_jl)
+ims_with_cnt = draw_contour(ch=4, channel='red', time=[200, 250], fov_jl=fov_jl)
 pylab.imshow(ims_with_cnt)
 pylab.show()
+

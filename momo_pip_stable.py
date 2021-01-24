@@ -16,53 +16,61 @@ import dask
 from dask.diagnostics import ProgressBar
 from tqdm import tqdm
 import _thread as thread
+import time
+
+
 def convert_time(time):
     h, s = divmod(time, 60 * 60)
     m, s = divmod(s, 60)
     h = h + m / 60 + s / 3600
     return h
 
-def to_BGR(im):
-    return cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
 
 def paral_read_csv(ps):
     return pd.read_csv(os.path.join(DIR, ps))
 
-def thread_dump(obj, init):
-    obj.dump_data()
-    exitthred[init] = True
+
+def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
+    obj.process_flow_CPU()
+    exitthred[thread_init] = True
+    return None
+
+
 # %%
+if __name__ == '__main__':
+    DIR = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3'
+    fovs_name = mp.get_fovs_name(DIR)
+    fovs_num = len(fovs_name)
+    exitthred = [False] * fovs_num
+    init = 0
+    while fovs_name:
+        to_process = fovs_name.pop(0)
+        print(f'Processing {init + 1}/{fovs_num}')
+        to_process.process_flow_GPU()
+        thread.start_new_thread(thread_dump, (to_process, init))
+        init += 1
 
-DIR = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3'
-fovs_name = mp.get_fovs_name(DIR)
-fovs_num = len(fovs_name)
-exitthred = [False] * fovs_num
-init = 0
-while fovs_name:
-    to_process = fovs_name.pop(0)
-    print(f'Processing {init + 1}/{fovs_num}')
-    to_process.process_flow()
-    thread.start_new_thread(thread_dump, (to_process, init))
-    init += 1
+    del to_process
 
-while False in exitthred:
-    pass
+    while False in exitthred:
+        time.sleep(5)
+        pass
 
-all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and file.split('_')[0] == 'fov')]
-all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv_name]
-with ProgressBar():
-    al_df = dask.compute(*all_scv, scheduler='threads')
-cells_dict = {}
-print('dump dic of mother cells data.\n')
-for df in tqdm(al_df):
-    cells_name = list(set(df['chamber']))
-    for na in cells_name:
-        cells_df = df[df['chamber'] == na]
-        cells_df = cells_df[cells_df['area'] > 100]
-        cells_df['time_h'] = [convert_time(s) for s in cells_df['time_s'] - min(cells_df['time_s'])]
-        cells_dict.update({na: cells_df})
+    all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and file.split('_')[0] == 'fov')]
+    all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv_name]
+    with ProgressBar():
+        al_df = dask.compute(*all_scv, scheduler='threads')
+    cells_dict = {}
+    print('dump dic of mother cells data.\n')
+    for df in tqdm(al_df):
+        cells_name = list(set(df['chamber']))
+        for na in cells_name:
+            cells_df = df[df['chamber'] == na]
+            cells_df = cells_df[cells_df['area'] > 100]
+            cells_df['time_h'] = [convert_time(s) for s in cells_df['time_s'] - min(cells_df['time_s'])]
+            cells_dict.update({na: cells_df})
 
-dump(cells_dict, os.path.join(DIR, 'mothers_raw_dic.jl'), compress='lz4')
+    dump(cells_dict, os.path.join(DIR, 'mothers_raw_dic.jl'), compress='lz4')
 
 # with ProgressBar():
 #     al_df = dask.compute(*all_scv, scheduler='threads')
