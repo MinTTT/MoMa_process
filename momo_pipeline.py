@@ -324,6 +324,7 @@ class MomoFov:
             self.chamber_cells_contour[channel] = contours_list
 
     def extract_mother_cells_features(self):
+        # TODO: bug: when channel have no cells, the features results are strange.
         green_channels = dict()
         red_channels = dict()
         green_time_points = dict()
