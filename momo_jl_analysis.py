@@ -117,10 +117,10 @@ def rangescale(frame, rescale):
 #%%
 DIR = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3'
 jl_file = find_jl(DIR)
-fov_jl = load(jl_file[-1])
+fov_jl = load(jl_file[4])
 
 #%%
-ims_with_cnt = draw_contour(ch=4, channel='red', time=[200, 250], fov_jl=fov_jl)
+ims_with_cnt = draw_contour(ch=4, channel='phase', time=[200, 250], fov_jl=fov_jl)
 pylab.imshow(ims_with_cnt)
 pylab.show()
 

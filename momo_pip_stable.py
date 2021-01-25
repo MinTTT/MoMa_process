@@ -38,7 +38,7 @@ def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
 
 # %%
 if __name__ == '__main__':
-    DIR = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3'
+    DIR = r'G:\ubuntu_data\20210124'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
     exitthred = [False] * fovs_num
@@ -54,7 +54,6 @@ if __name__ == '__main__':
 
     while False in exitthred:
         time.sleep(5)
-        pass
 
     all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and file.split('_')[0] == 'fov')]
     all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv_name]

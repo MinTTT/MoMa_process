@@ -277,7 +277,7 @@ class MomoFov:
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
         self.chamber_graylevel = chamber_graylevel
         # print(f'[{self.fov_name}] -> , chamber_graylevel)
-        print(f'[{self.fov_name}] -> detect chamber loaded number: {len(self.loaded_chamber_box)}.')
+        print(f'[{self.fov_name}] -> detect loaded chamber number: {len(self.loaded_chamber_box)}.')
 
     def cell_detection(self):
         seg_inputs = ()
@@ -365,8 +365,10 @@ class MomoFov:
         _ = Parallel(n_jobs=128, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
                                                      for inx_t, time in enumerate(tqdm(self.times['phase'])))
 
-        self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
-        self.time_points['red'] = [red_time_points[i] for i in self.times['red']]
+        if 'green' in self.channels:
+            self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
+        if 'red' in self.channels:
+            self.time_points['red'] = [red_time_points[i] for i in self.times['red']]
 
         for cha_name_inx, chambername in enumerate(self.loaded_chamber_name):
             self.mother_cell_pars[chambername] = []
@@ -382,20 +384,22 @@ class MomoFov:
                         area=cv2.contourArea(mother_cell_contour),
                         time_point=self.time_points['phase'][tm_inx]
                     )
-                    if time in self.times['green']:
-                        green_channel_im = green_channels[time][cha_name_inx]
-                        green_pixels = green_channel_im[cell_mask == 255]
-                        # cell_pars['green_mean'] = cv2.mean(green_channel_im, cell_mask)[0]
-                        cell_pars['green_mean'] = np.mean(green_pixels)
-                        # medium only consider the medium of the brightest 10% pixels.
-                        cell_pars['green_medium'] = np.quantile(green_pixels, 0.95)
-                    if time in self.times['red']:
-                        red_channel_im = red_channels[time][cha_name_inx]
-                        red_pixels = red_channel_im[cell_mask == 255]
-                        # cell_pars['red_mean'] = cv2.mean(red_channel_im, cell_mask)[0]
-                        cell_pars['red_mean'] = np.mean(red_pixels)
-                        # medium only consider the medium of the brightest 10% pixels.
-                        cell_pars['red_medium'] = np.quantile(red_pixels, 0.95)
+                    if 'green' in self.channels:
+                        if time in self.times['green']:
+                            green_channel_im = green_channels[time][cha_name_inx]
+                            green_pixels = green_channel_im[cell_mask == 255]
+                            # cell_pars['green_mean'] = cv2.mean(green_channel_im, cell_mask)[0]
+                            cell_pars['green_mean'] = np.mean(green_pixels)
+                            # medium only consider the medium of the brightest 10% pixels.
+                            cell_pars['green_medium'] = np.quantile(green_pixels, 0.95)
+                    if 'red' in self.channels:
+                        if time in self.times['red']:
+                            red_channel_im = red_channels[time][cha_name_inx]
+                            red_pixels = red_channel_im[cell_mask == 255]
+                            # cell_pars['red_mean'] = cv2.mean(red_channel_im, cell_mask)[0]
+                            cell_pars['red_mean'] = np.mean(red_pixels)
+                            # medium only consider the medium of the brightest 10% pixels.
+                            cell_pars['red_medium'] = np.quantile(red_pixels, 0.95)
                     self.mother_cell_pars[chambername].append(cell_pars)
         # This section was used to rearrange the single chamber frame along time.
         if 'green' in self.channels:
@@ -448,11 +452,13 @@ class MomoFov:
                          chamber_cells_mask=self.chamber_cells_mask,
                          chamber_cells_contour=self.chamber_cells_contour,
                          chamber_phase_images=self.chamber_phase_ims,
-                         chamber_green_images=self.chamber_green_ims,
-                         chamber_red_images=self.chamber_red_ims,
                          mother_cells_parameters=self.mother_cell_pars,
                          mother_cells_dataframe=self.dataframe_mother_cells
                          )
+        if 'green' in self.channels:
+            save_data['chamber_green_images'] = self.chamber_green_ims,
+        if 'red' in self.channels:
+            save_data['chamber_red_images'] = self.chamber_red_ims,
         if compress:
             dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lz4')
         return None
