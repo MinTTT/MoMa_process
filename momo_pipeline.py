@@ -14,7 +14,6 @@ import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
 
-
 import time
 # […]
 
@@ -30,6 +29,7 @@ from utils.delta.utilities import getChamberBoxes, getDriftTemplate, driftcorr, 
 from joblib import Parallel, dump, delayed
 from utils.rotation import rotate_fov, rotate_image
 from utils.signal import vertical_mean
+
 # import dask
 # # dask.config.set(pool=ThreadPool(64))
 # from dask.distributed import Client, progress
@@ -200,7 +200,7 @@ class MomoFov:
         chambermask = postprocess(chambermask, min_size=min_chamber_area)  # Binarization, cleaning and area filtering
         self.chamberboxes = getChamberBoxes(np.squeeze(chambermask))
 
-        print(f"{self.fov_name}: detect {len(self.chamberboxes)} chambers.")
+        print(f"[{self.fov_name}] -> detect {len(self.chamberboxes)} chambers.")
         border = int(im.shape[0] * 0.02)
         chambercorbox = dict(xtl=min(self.chamberboxes, key=lambda elem: elem['xtl'])['xtl'],
                              xbr=max(self.chamberboxes, key=lambda elem: elem['xbr'])['xbr'],
@@ -240,6 +240,7 @@ class MomoFov:
             self.time_points['phase'][inx] = tp
             self.rotation[inx] = angl
             return None
+
         # --------------------- input all phase images --------------------------------------
         _ = Parallel(n_jobs=30, require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
@@ -329,7 +330,7 @@ class MomoFov:
         red_channels = dict()
         green_time_points = dict()
         red_time_points = dict()
-        # for inx_t, time in enumerate(self.times['phase']):
+
         def parallel_flur_seg(inx_t, time):
             """
             get all fluorescent images from disk and seg into channel XX_channels is a dictionary keys are file 
@@ -357,14 +358,8 @@ class MomoFov:
                     red_time_points[time] = time_point
             return time
 
-        # parall_results = [dask.delayed(parallel_flur_seg)(inx_t, time) for inx_t, time in
-        #                   enumerate(self.times['phase'])]
-        # print(f'Now, {self.fov_name}: loading fluorescent images.')
-        # with ProgressBar():
-        #     _ = dask.compute(*parall_results)
-
         _ = Parallel(n_jobs=128, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
-                                                     for inx_t, time in enumerate(tqdm(self.times['phase'])))
+                                                      for inx_t, time in enumerate(tqdm(self.times['phase'])))
 
         if 'green' in self.channels:
             self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
@@ -471,6 +466,7 @@ class MomoFov:
         self.detect_frameshift()
         print(f'[{self.fov_name}] -> detect cells.\n')
         self.cell_detection()
+
     def process_flow_CPU(self):
         print(f"[{self.fov_name}] -> extract cells' features.\n")
         self.extract_mother_cells_features()

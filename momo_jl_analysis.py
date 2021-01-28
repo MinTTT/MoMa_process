@@ -70,7 +70,7 @@ def draw_contour(ch=None, ch_name=None,channel='phase',time=0, fov_jl=None):
         ims_with_cnt.append(
             cv2.drawContours(to_BGR(rangescale(channel_im[i], (0, 255)).astype(np.uint8)), cts, -1,
                              (247, 220, 111),
-                             2))
+                             1))
     ims_with_cnt = np.concatenate(ims_with_cnt, axis=1)
     return ims_with_cnt
 
@@ -115,12 +115,12 @@ def rangescale(frame, rescale):
     return frame
 
 #%%
-DIR = r'G:\ubuntu_data\20210101_NCM_pECJ3_M5_L3'
+DIR = r'./test_data_set/jl_data'
 jl_file = find_jl(DIR)
-fov_jl = load(jl_file[4])
+fov_jl = load(jl_file[0])
 
 #%%
-ims_with_cnt = draw_contour(ch=4, channel='phase', time=[200, 250], fov_jl=fov_jl)
+ims_with_cnt = draw_contour(ch=4, channel='red', time=[0, 50], fov_jl=fov_jl)
 pylab.imshow(ims_with_cnt)
 pylab.show()
 

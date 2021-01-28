@@ -41,7 +41,7 @@ if __name__ == '__main__':
     DIR = r'G:\ubuntu_data\20210124'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
-    exitthred = [False] * fovs_num
+    exitthread = [False] * fovs_num
     init = 0
     while fovs_name:
         to_process = fovs_name.pop(0)
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     del to_process
 
-    while False in exitthred:
+    while False in exitthread:
         time.sleep(5)
 
     all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and file.split('_')[0] == 'fov')]
