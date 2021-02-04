@@ -63,14 +63,16 @@ def cell_div_filter(cell_area_t):
     cell_area = cell_area_t[:, 0].ravel()
     time_h = cell_area_t[:, 1].ravel()
     area_dd = np.diff(np.diff(cell_area))
-    outlier = np.where(0.9 * cell_area[1:-1] < -area_dd)[0]
-    print(outlier)
+    outlier = np.where(np.logical_or((0.8 * cell_area[1:-1] < -area_dd),
+                                     np.logical_and(0.2 * cell_area[1:-1] < -area_dd,
+                                                    -area_dd < 0.3 * cell_area[1:-1])))[0] + 1
+    # print(outlier)
     mask = np.array([True] * len(cell_area))
     mask[outlier] = False
     fild_cell_area = cell_area[mask]
     fild_time_h = time_h[mask]
     area_dd = np.diff(np.diff(fild_cell_area))
-    outlier2 = np.where(0.9 * fild_cell_area[0:-2] < area_dd)[0]
+    outlier2 = np.where(1.2 * fild_cell_area[1:-1] < area_dd)[0] + 1
     mask = np.array([True] * len(fild_cell_area))
     mask[outlier2] = False
     fild_cell_area = fild_cell_area[mask]  # filtered data, excluding outlier
@@ -79,17 +81,16 @@ def cell_div_filter(cell_area_t):
     div_thre = 0.7
     min_p = fild_cell_area * (1 - div_thre)
     max_p = fild_cell_area * div_thre
-    filter_peaks = np.where(np.logical_and(-fild_area_diff > min_p[:-1], -fild_area_diff < max_p[:-1]))[0]  # division peaks
+    filter_peaks = np.where(np.logical_and(-fild_area_diff > min_p[:-1], -fild_area_diff < max_p[:-1]))[
+        0]  # division peaks
     peak_num = len(filter_peaks)
     peaks_slice = [0] + list(filter_peaks + 1) + [len(fild_cell_area)]
     num_peaks = np.diff(peaks_slice)
-    print(peaks_slice)
+    # print(peaks_slice)
     len_index = np.where(num_peaks >= 4)[0]  # one cell cycle must have more than 5 records.
     div_slice_all = [slice(peaks_slice[i], peaks_slice[i + 1]) for i in range(peak_num + 1)]
     div_slice = [div_slice_all[i] for i in len_index]  # cell cycle slice
     return div_slice, fild_cell_area, fild_time_h
-
-
 
 
 def get_growth_rate(cell_df, **kwargs):
@@ -104,40 +105,25 @@ def get_growth_rate(cell_df, **kwargs):
         st = kwargs['sizetype']
     else:
         st = 'length'
-    if cell_df['time_h'].max() < 75:
+
+    cell_df = cell_df[[st, 'time_h']]
+
+    cell_data = cell_df[cell_df[st] > 15].values  # if compute ref cell length, cell length < 15 are except.
+
+    if cell_data[:, 1].max() < 75:  # time must great than 75 hrs
         return None
-    cell_area = cell_df[st]
-    area_dd = np.diff(np.diff(cell_area))
-    outlier = np.where(1 * cell_area[0:-2] < -area_dd)[0] + 1
-    mask = np.array([True] * len(cell_area))
-    mask[outlier] = False
-    fild_cell_df = cell_df[mask]
-    area_dd = np.diff(np.diff(fild_cell_df[st]))
-    outlier2 = np.where(1 * fild_cell_df[st][0:-2] < area_dd)[0] + 1
-    mask = np.array([True] * len(fild_cell_df))
-    mask[outlier2] = False
-    fild_cell_df = fild_cell_df[mask]  # filtered data, excluding outlier
-    fild_area_diff = np.diff(fild_cell_df[st])
-    div_thre = 0.8
-    min_p = fild_cell_df[st] * (1 - div_thre)
-    max_p = fild_cell_df[st] * div_thre
-    filter_peaks = np.where(np.logical_and(-fild_area_diff > min_p[:-1], -fild_area_diff < max_p[:-1]))[
-        0]  # division peaks
-    peak_num = len(filter_peaks)
-    peaks_sclice = [0] + list(filter_peaks + 1) + [len(fild_cell_df)]
-    num_peaks = np.diff(peaks_sclice)
-    len_index = np.where(num_peaks >= 5)[0]  # one cell cycle must have more than 5 records.
-    div_slice_all = [slice(peaks_sclice[i], peaks_sclice[i + 1]) for i in range(peak_num + 1)]
-    div_slice = [div_slice_all[i] for i in len_index]  # cell cycle slice
-    if len(div_slice) < 5:  # at least divide 4 times.
+
+    div_slice, fild_cells_area, fild_time = cell_div_filter(cell_data)
+
+    if len(div_slice) < 8:  # at least divide 9 times.
         return None
     time_all = []
     rate_all = []
     length_rate_all = []
     length_time_all = []
     for sl in div_slice:
-        length = fild_cell_df[st].iloc[sl].values
-        time = fild_cell_df['time_h'].iloc[sl].values
+        length = fild_cells_area[sl]
+        time = fild_time[sl]
         # instantaneous growth rate
         len_rate, len_time, inst_rate, inst_time = log_fitting(length, time)
 
@@ -181,7 +167,7 @@ def binned_average(mat, num=100, std=True, classify_only=False):
     return binned_avg
 
 
-def draw_binned_growth_rate(data_dict: dict, bin_num, ax, **kwargs):
+def draw_binned_growth_rate(data_dict: dict, bin_num, ax=None, **kwargs):
     """
     I'm too lazy to annotate.
     :param data_dict: dict
@@ -189,6 +175,8 @@ def draw_binned_growth_rate(data_dict: dict, bin_num, ax, **kwargs):
     :param kwargs:
     :return: axes
     """
+    if ax is None:
+        ax = plt.gca()
     cells_name = list(data_dict.keys())
     gr_array = [data_dict[na] for na in cells_name]
     gr_array = np.vstack(gr_array)
@@ -219,48 +207,52 @@ def draw_binned_growth_rate(data_dict: dict, bin_num, ax, **kwargs):
     ax.set_ylabel('Growth rate (1/h)')
 
 
-
 # %% load statistic data
 ps = r'./test_data_set/csv_data/mothers_raw_dic.jl'
 # cells_df = cells_df.compute()
 cells_df = load(ps)
 cells_name = list(cells_df.keys())
 
-#%%
-cell_df = cells_df[cells_name[2002]]
+# %%
+cell_df = cells_df[cells_name[688]]
 length = cell_df['length']
 time_h = cell_df['time_h']
 
 slices, fild_leng, fild_t = cell_div_filter(cell_df[['length', 'time_h']].values)
 fig, ax = plt.subplots(1, 1)
-ax.scatter(time_h, length, marker='d')
+ax.scatter(time_h, length, marker='d', c='#FFA2A8')
 ax.plot(time_h, length)
 for sl in slices:
     ax.scatter(fild_t[sl], fild_leng[sl])
 ax.set_yscale('log')
+ax.set_ylim(10, 250)
 fig.show()
-
-
 
 # %% filter data
 print('calculate instantaneous growth.')
-cells_growth_rate = Parallel(n_jobs=64, backend='threading')(delayed(get_growth_rate)(cells_df[cn], sizetype='length')
-                                                             for cn in tqdm(cells_name))
-cells_growth_rate = {cn: cells_growth_rate[i] for i, cn in enumerate(cells_name)
-                     if isinstance(cells_growth_rate[i], list)}
+cells_growth_rate_list = Parallel(n_jobs=64, backend='threading')(
+    delayed(get_growth_rate)(cells_df[cn], sizetype='length')
+    for cn in tqdm(cells_name))
+cells_growth_rate = {cn: cells_growth_rate_list[i] for i, cn in enumerate(cells_name)
+                     if isinstance(cells_growth_rate_list[i], list)}
 cells_name = list(cells_growth_rate.keys())
-# cells_inst_growth_rate = {cn: cells_growth_rate[i][0] for i, cn in tqdm(enumerate(cells_name))}
 cells_inst_growth_rate = {cn: cells_growth_rate[cn][0] for cn in cells_name}
-# cells_len_growth_rate = {cn: cells_growth_rate[i][1] for i, cn in tqdm(enumerate(cells_name))}
 cells_len_growth_rate = {cn: cells_growth_rate[cn][1] for cn in cells_name}
 
+# time range filter
+
+mask_time = [binned_average(cells_inst_growth_rate[cn][:, 0].reshape(-1, 1), num=4) for cn in cells_name]
+
+mask_time = [False if np.isnan(gr).any() else True for gr in mask_time]
+
+cells_name = [cells_name[i] for i in np.arange(len(cells_name))[mask_time]]
+
 fig1, ax = plt.subplots(1, 1)
-draw_binned_growth_rate(cells_len_growth_rate, bin_num=50, bac_cells_num=40, ax=ax)
+draw_binned_growth_rate(cells_inst_growth_rate, bin_num=50, bac_cells_num=40, ax=ax)
 fig1.show()
 # %% binned 4
 print("classify growth type.")
-cells_name = list(cells_inst_growth_rate.keys())
-four_binned = Parallel(n_jobs=1000, backend='threading')(
+four_binned = Parallel(n_jobs=10, backend='threading')(
     delayed(list)(binned_average(cells_inst_growth_rate[cn], num=4, std=False)[:, 1])
     for cn in tqdm(cells_name))
 # four_binned = [list(binned_average(cells_inst_growth_rate[cn][:, 0], cells_inst_growth_rate[cn][:, 1], num=4)[1])
@@ -320,13 +312,13 @@ bgreen_mean = mean_flu[:, -1]
 # _, bred_mean, bred_std = binned_average(cells_time, cells_red, num=fluor_binnum)
 
 fig4, ax = plt.subplots(1, 1)
-sld_cells = np.random.choice(clfd_cell, 4)
+sld_cells = np.random.choice(clfd_cell, 30)
 for cell in tqdm(sld_cells):
     cell_data = cells_df[cell]
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
     ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
-ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
-ax.plot(bred_mean, bgreen_mean, lw=2, color='#3498DB')
+# ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
+ax.plot(bred_mean, bgreen_mean, lw=4, color='#3498DB')
 ax.set_xscale('log')
 ax.set_yscale('log')
 ax.set_ylabel('GFP intensity (a.u.)')

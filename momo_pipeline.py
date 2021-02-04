@@ -29,7 +29,9 @@ from utils.delta.utilities import getChamberBoxes, getDriftTemplate, driftcorr, 
 from joblib import Parallel, dump, delayed
 from utils.rotation import rotate_fov, rotate_image
 from utils.signal import vertical_mean
-
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from scipy.fftpack import fft, fftfreq
 # import dask
 # # dask.config.set(pool=ThreadPool(64))
 # from dask.distributed import Client, progress
@@ -64,9 +66,28 @@ target_size_seg = (256, 32)
 model_seg = unet_seg(input_size=target_size_seg + (1,))
 model_seg.load_weights(seg_model_file)
 
+colors_2 = ['#FFA2A8', '#95FF57']  # red, green
 
+
+# %%
 def get_channel_name(dir, name):
     return os.listdir(os.path.join(dir, name))
+
+
+def box_2_pltrec(box):
+    plt_x, plt_y = box['xtl'], box['ytl']
+    h = int(box['ybr'] - box['ytl'])
+    w = int(box['xbr'] - box['xtl'])
+    return dict(xy=(plt_x, plt_y), width=w, height=h)
+
+
+def draw_channel_order(im, chn_boxs, colors, ax=None):
+    if ax == None:
+        ax = plt.gca()
+    ax.imshow(im, cmap='gray')
+    for i, box in enumerate(chn_boxs):
+        ax.add_patch(Rectangle(**box_2_pltrec(box), fill=False, edgecolor=colors[i]))
+    return ax
 
 
 def get_times(dir, name, channels):
@@ -267,18 +288,50 @@ class MomoFov:
         selected_ims = self.phase_ims[sample_index, ...]
 
         chamber_graylevel = []
+        chamber_frq = []
+
         for box in self.chamberboxes:
             half_chambers = selected_ims[:, box['ytl']:int((box['ybr'] - box['ytl']) / 2 + box['ytl']),
                             box['xtl']:box['xbr']]
             mean_chamber = np.mean(half_chambers)
             chamber_graylevel.append(mean_chamber)
+            sg, frq = image_conv(selected_ims[:, int(box['ytl'] + (box['ybr'] - box['ytl']) * 0.15):int(
+                (box['ybr'] - box['ytl']) * 0.5 + box['ytl']),
+                                 box['xtl']:box['xbr']])
+            chamber_frq.append([sg, frq])
+
         cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.6
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamberboxes[index] for index in self.index_of_loaded_chamber]
+
+        fig_sg, ax = plt.subplots(1, 1)
+        for i in range(len(chamber_frq)):
+            sg, frq = chamber_frq[i]
+            if i in self.index_of_loaded_chamber:
+                ax.plot(frq, np.log(abs(sg)), '--k', alpha=0.2)
+            else:
+                ax.plot(frq, np.log(abs(sg)), '-r')
+
+        try:
+            fig_sg_ps = os.path.join(self.dir, 'chamber_load')
+            os.makedirs(fig_sg_ps)
+        except FileExistsError:
+            pass
+
+        fig_sg.savefig(os.path.join(fig_sg_ps, f'{self.fov_name}_F.svg'), format='svg')
+
+        fig_ch, ax = plt.subplots(1, 1)
+        colors = [colors_2[1] if i in self.index_of_loaded_chamber else colors_2[0]
+                  for i in range(len(chamber_frq))]
+        draw_channel_order(rangescale(self.phase_ims[0, ...], (0, 255)).astype(np.uint8),
+                           self.chamberboxes, colors, ax=ax)
+        fig_ch.savefig(os.path.join(fig_sg_ps, f'{self.fov_name}_chamber.svg'), format='svg')
+
         self.chamber_graylevel = chamber_graylevel
         # print(f'[{self.fov_name}] -> , chamber_graylevel)
         print(f'[{self.fov_name}] -> detect loaded chamber number: {len(self.loaded_chamber_box)}.')
+        return [self.index_of_loaded_chamber, self.chamber_graylevel, chamber_frq]
 
     def cell_detection(self):
         seg_inputs = ()
@@ -296,7 +349,7 @@ class MomoFov:
         seg = model_seg.predict(seg_inputs)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
 
-        # -------------- reform the size-------------- TODO: parallel 1
+        # -------------- reform the size--------------
         def parallel_rearange_mask(t, chn):
             frame_index = t + chn * len(self.times['phase'])
             ori_frames[t] = cv2.resize(self.cell_mask[frame_index], ori_frames.shape[2:0:-1])
@@ -503,6 +556,26 @@ def get_fovs_name(dir, all_fov=False):
         return fov_folder
 
 
+
+
+
+def image_conv(imas):
+    chamber_im = imas
+    len_im = chamber_im.shape[-2]
+    v_means = []
+    for i in range(len(chamber_im)):
+        v_means.append(vertical_mean(chamber_im[i]))
+
+    conv_sg = np.ones(len_im)
+    for vm in v_means:
+        vm = (vm - np.mean(vm)) / np.std(vm)
+        conv_sg = conv_sg * fft(vm)
+
+    freq = fftfreq(len_im, 1 / len_im)
+    mask = freq > 0
+    return conv_sg[mask], freq[mask]
+
+
 # %%
 if __name__ == '__main__':
     DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
@@ -513,3 +586,70 @@ if __name__ == '__main__':
         print(f'Processing {i + 1}/{len(untreated)}')
         fov.process_flow()
         del untreated[i]
+
+    ######################################################
+    # %%
+    DIR = r'test_data_set/test_data'
+
+    fovs_name = get_fovs_name(DIR)
+    fovs_num = len(fovs_name)
+
+    chamber_info = []
+    for fov in fovs_name:
+        fov.detect_channels()
+        chamber_info.append(fov.detect_frameshift())
+
+    if_loaded = []
+    sg_freq = []
+    fig1, ax = plt.subplots(1, 1)
+    for info in chamber_info:
+        index = info[0]
+        F = info[-1]
+        for i in range(len(index)):
+            sg, freq = F[i]
+            sg_freq.append(F[i])
+            if i in index:
+                ax.plot(freq, np.log(abs(sg)), '--k', alpha=0.5)
+                if_loaded.append([np.float(1)])
+            else:
+                ax.plot(freq, np.log(abs(sg)), '-r')
+                if_loaded.append([np.float(0)])
+    ax.set_xlabel('Frequency')
+    ax.set_ylabel('$\ln(\|F\|)$')
+    fig1.show()
+
+    from sklearn.decomposition import PCA
+    from sklearn import svm
+
+    load_x = []
+
+    for i, load in enumerate(if_loaded):
+        sg, freq = sg_freq[i]  # only use freq less than 25
+        sg = abs(np.log(sg[5:20]))
+        load_x.append(load + list(sg))
+
+    load_x = np.array(load_x)
+
+    train_x = load_x[:int(len(load_x) * 0.8), :]
+    test_x = load_x[int(len(load_x) * 0.8):, :]
+
+    load_model_pca = PCA(n_components=6)
+    load_class_scv = svm.SVC()
+
+    load_model_pca.fit(train_x[:, 1:])
+
+    model_pca_results = load_model_pca.transform(train_x[:, 1:])
+
+    load_class_scv.fit(model_pca_results, train_x[:, 0])
+
+    fig1, ax = plt.subplots(1, 1)
+
+    ax.scatter(model_pca_results[:, 0], model_pca_results[:, 1], c=[colors_2[int(i)] for i in train_x[:, 0]])
+
+    fig1.show()
+
+    reduction = load_model_pca.transform(load_x[:, 1:])
+    predict = load_class_scv.predict(reduction)
+    print(load_x[:, 0])
+    predict
+    predict - load_x[:, 0]
