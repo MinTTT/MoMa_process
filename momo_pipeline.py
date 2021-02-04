@@ -174,7 +174,7 @@ class MomoFov:
         self.chamber_green_ims = dict()
         self.chamber_phase_ims = dict()
         self.mother_cell_pars = dict()
-        self.dataframe_mother_cells = pd.DataFrame(data=[])
+        self.dataframe_mother_cells = None
         self.index_of_loaded_chamber = []
         self.chamber_graylevel = []
         self.chamber_seg = None
@@ -426,13 +426,17 @@ class MomoFov:
                 pf['time_s'] = time
                 pf['chamber'] = [f'{self.fov_name}_{chna}'] * len(pf)
                 pf_list.append(pf)
-        self.dataframe_mother_cells = pd.concat(pf_list, sort=False)
-        self.dataframe_mother_cells.index = pd.Index(range(len(self.dataframe_mother_cells)))
+        try:  # if have no mother
+            self.dataframe_mother_cells = pd.concat(pf_list, sort=False)
+            self.dataframe_mother_cells.index = pd.Index(range(len(self.dataframe_mother_cells)))
+        except ValueError:
+            print(f'[{self.fov_name}] -> Waring, has no mother cell.')
         return None
 
     def dump_data(self, compress=True):
         print(f"[{self.fov_name}] -> dump memory data.\n")
-        self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
+        if self.dataframe_mother_cells:
+            self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
                          frame_rotation_anle=self.rotation,
@@ -457,6 +461,7 @@ class MomoFov:
             save_data['chamber_red_images'] = self.chamber_red_ims,
         if compress:
             dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lz4')
+        print(f"[{self.fov_name}] -> memory data saved successfully.\n")
         return None
 
     def process_flow_GPU(self):

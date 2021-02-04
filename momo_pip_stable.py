@@ -32,7 +32,7 @@ def paral_read_csv(ps):
 
 def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
     obj.process_flow_CPU()
-    exitthred[thread_init] = True
+    exitthread[thread_init] = True
     return None
 
 
@@ -66,7 +66,7 @@ if __name__ == '__main__':
         for na in cells_name:
             cells_df = df[df['chamber'] == na]
             cells_df = cells_df[cells_df['area'] > 100]
-            cells_df['time_h'] = [convert_time(s) for s in cells_df['time_s'] - min(cells_df['time_s'])]
+            cells_df['time_h'] = [convert_time(s) for s in cells_df['time_s'] - cells_df['time_s'].min()]
             cells_dict.update({na: cells_df})
 
     dump(cells_dict, os.path.join(DIR, 'mothers_raw_dic.jl'), compress='lz4')
