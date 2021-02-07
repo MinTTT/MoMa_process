@@ -21,7 +21,6 @@ import time
 from utils.delta.data import postprocess
 from utils.delta.model import unet_chambers, unet_seg
 import numpy as np
-
 import tensorflow as tf
 import cv2
 import tifffile as tif
@@ -69,7 +68,6 @@ model_seg.load_weights(seg_model_file)
 colors_2 = ['#FFA2A8', '#95FF57']  # red, green
 
 
-# %%
 def get_channel_name(dir, name):
     return os.listdir(os.path.join(dir, name))
 
@@ -553,10 +551,8 @@ def get_fovs_name(dir, all_fov=False):
         return fovs_name
     else:
         fov_folder.sort(key=lambda name: int(name.split('_')[-1]))
-        return fov_folder
-
-
-
+        fovs_name = [MomoFov(folder, DIR) for folder in fov_folder]
+        return fovs_name
 
 
 def image_conv(imas):
@@ -589,16 +585,25 @@ if __name__ == '__main__':
 
     ######################################################
     # %%
-    DIR = r'test_data_set/test_data'
-
-    fovs_name = get_fovs_name(DIR)
+    DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+    # DIR = r'test_data_set/test_data'
+    fovs_name = get_fovs_name(DIR, all_fov=True)
     fovs_num = len(fovs_name)
 
     chamber_info = []
-    for fov in fovs_name:
+    for fov_i in range(fovs_num):
+        fov = fovs_name.pop()
         fov.detect_channels()
-        chamber_info.append(fov.detect_frameshift())
-
+        load_index, grey, freq = fov.detect_frameshift()
+        chambers_na = [f'{fov.fov_name}_{i}' for i in range(len(grey))]
+        del fov
+        load_list = [1 if ch_i in load_index else 0 for ch_i in range(len(grey))]
+        load_pf = pd.DataFrame(data=dict(name=chambers_na, loaded=load_list, grey_value=grey, freq=freq))
+        chamber_info.append(load_pf)
+    load_df_all = pd.concat(chamber_info)
+    load_df_all.index = pd.Index(np.arange(len(load_df_all)))
+    load_df_all.to_csv(os.path.join(DIR, 'chamber_load', 'load_train_data.csv'))
+#%%
     if_loaded = []
     sg_freq = []
     fig1, ax = plt.subplots(1, 1)
