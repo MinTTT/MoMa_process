@@ -31,6 +31,7 @@ from utils.signal import vertical_mean
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from scipy.fftpack import fft, fftfreq
+
 # import dask
 # # dask.config.set(pool=ThreadPool(64))
 # from dask.distributed import Client, progress
@@ -238,6 +239,7 @@ class MomoFov:
             self.chamber_direction = 1
             self.chambermask = chambermask
             self.drifttemplate = getDriftTemplate(self.chamberboxes, im.squeeze())
+
         return None
 
     def detect_frameshift(self):
@@ -282,7 +284,7 @@ class MomoFov:
             box['ytl'] -= ycorr_one
         # -------------detect whether chambers were loaded with cells--------
         num_time = len(self.times['phase'])
-        sample_index = np.random.choice(range(num_time), int(num_time * 0.01 + 1))
+        sample_index = np.random.choice(range(num_time), 10)
         selected_ims = self.phase_ims[sample_index, ...]
 
         chamber_graylevel = []
@@ -293,9 +295,9 @@ class MomoFov:
                             box['xtl']:box['xbr']]
             mean_chamber = np.mean(half_chambers)
             chamber_graylevel.append(mean_chamber)
-            sg, frq = image_conv(selected_ims[:, int(box['ytl'] + (box['ybr'] - box['ytl']) * 0.15):int(
-                (box['ybr'] - box['ytl']) * 0.5 + box['ytl']),
-                                 box['xtl']:box['xbr']])
+            sg, frq = image_conv(np.expand_dims(selected_ims[0, int(box['ytl'] + (box['ybr'] - box['ytl']) * 0.20):int(
+                (box['ybr'] - box['ytl']) * 0.6 + box['ytl']),
+                                 box['xtl']:box['xbr']], axis=0))
             chamber_frq.append([sg, frq])
 
         cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.6
@@ -317,14 +319,14 @@ class MomoFov:
         except FileExistsError:
             pass
 
-        fig_sg.savefig(os.path.join(fig_sg_ps, f'{self.fov_name}_F.svg'), format='svg')
+        plt.savefig(os.path.join(fig_sg_ps, f'{self.fov_name}_F.svg'), format='svg')
 
         fig_ch, ax = plt.subplots(1, 1)
         colors = [colors_2[1] if i in self.index_of_loaded_chamber else colors_2[0]
                   for i in range(len(chamber_frq))]
         draw_channel_order(rangescale(self.phase_ims[0, ...], (0, 255)).astype(np.uint8),
                            self.chamberboxes, colors, ax=ax)
-        fig_ch.savefig(os.path.join(fig_sg_ps, f'{self.fov_name}_chamber.svg'), format='svg')
+        plt.savefig(os.path.join(fig_sg_ps, f'{self.fov_name}_chamber.svg'), format='svg')
 
         self.chamber_graylevel = chamber_graylevel
         # print(f'[{self.fov_name}] -> , chamber_graylevel)
@@ -603,42 +605,46 @@ if __name__ == '__main__':
     load_df_all = pd.concat(chamber_info)
     load_df_all.index = pd.Index(np.arange(len(load_df_all)))
     load_df_all.to_csv(os.path.join(DIR, 'chamber_load', 'load_train_data.csv'))
-#%%
-    if_loaded = []
-    sg_freq = []
-    fig1, ax = plt.subplots(1, 1)
-    for info in chamber_info:
-        index = info[0]
-        F = info[-1]
-        for i in range(len(index)):
-            sg, freq = F[i]
-            sg_freq.append(F[i])
-            if i in index:
-                ax.plot(freq, np.log(abs(sg)), '--k', alpha=0.5)
-                if_loaded.append([np.float(1)])
-            else:
-                ax.plot(freq, np.log(abs(sg)), '-r')
-                if_loaded.append([np.float(0)])
-    ax.set_xlabel('Frequency')
-    ax.set_ylabel('$\ln(\|F\|)$')
-    fig1.show()
 
+
+    test_x = []
+    chamber_name = list(load_df_all['name'].values)
+    for name in chamber_name:
+        freq = load_df_all[load_df_all['name'] == name]['freq'].values[0][0]
+        load_ = load_df_all[load_df_all['name'] == name]['loaded'].values[0]
+        test_x.append([load_] + list(np.log(np.abs(freq[10:20]))))
+
+
+    test_x = np.array(test_x)
+    # %%
     from sklearn.decomposition import PCA
     from sklearn import svm
+    from joblib import load
 
     load_x = []
 
-    for i, load in enumerate(if_loaded):
-        sg, freq = sg_freq[i]  # only use freq less than 25
-        sg = abs(np.log(sg[5:20]))
-        load_x.append(load + list(sg))
+    # for i, load in enumerate(if_loaded):
+    #     sg, freq = sg_freq[i]  # only use freq less than 25
+    #     sg = abs(np.log(sg[5:20]))
+    #     load_x.append(load + list(sg))
+
+    ps_pd = r'test_data_set/test_data/pECJ3_M5_L3/chamber_load/load_train_data.pd'
+    ps = r'test_data_set/test_data/pECJ3_M5_L3/chamber_load/load_train_data_trimed.csv'
+    trimed_df = pd.read_csv(ps)
+    df = load(ps_pd)
+    chamber_name = list(trimed_df['name'].values)
+    for name in chamber_name:
+        freq = df[df['name'] == name]['freq'].values[0][0]
+        load_ = trimed_df[trimed_df['name'] == name]['loaded'].values[0]
+        load_x.append([load_] + list(np.log(np.abs(freq[10:20]))))
+
 
     load_x = np.array(load_x)
 
     train_x = load_x[:int(len(load_x) * 0.8), :]
     test_x = load_x[int(len(load_x) * 0.8):, :]
 
-    load_model_pca = PCA(n_components=6)
+    load_model_pca = PCA(n_components=4)
     load_class_scv = svm.SVC()
 
     load_model_pca.fit(train_x[:, 1:])
@@ -652,9 +658,11 @@ if __name__ == '__main__':
     ax.scatter(model_pca_results[:, 0], model_pca_results[:, 1], c=[colors_2[int(i)] for i in train_x[:, 0]])
 
     fig1.show()
-
-    reduction = load_model_pca.transform(load_x[:, 1:])
+#%%
+    reduction = load_model_pca.transform(test_x[:, 1:])
     predict = load_class_scv.predict(reduction)
-    print(load_x[:, 0])
-    predict
-    predict - load_x[:, 0]
+    print(test_x[:, 0])
+    print(predict)
+    diff = predict - test_x[:, 0]
+    print(np.sum(np.abs(diff[diff < 0])) / len(predict))
+#%%
