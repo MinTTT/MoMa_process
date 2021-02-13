@@ -587,8 +587,8 @@ if __name__ == '__main__':
 
     ######################################################
     # %%
-    DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
-    # DIR = r'test_data_set/test_data'
+    # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+    DIR = r'test_data_set/test_data'
     fovs_name = get_fovs_name(DIR, all_fov=True)
     fovs_num = len(fovs_name)
 
@@ -612,7 +612,7 @@ if __name__ == '__main__':
     for name in chamber_name:
         freq = load_df_all[load_df_all['name'] == name]['freq'].values[0][0]
         load_ = load_df_all[load_df_all['name'] == name]['loaded'].values[0]
-        test_x.append([load_] + list(np.log(np.abs(freq[10:20]))))
+        test_x.append([load_] + list(np.log(np.abs(freq[15:25]))))
 
 
     test_x = np.array(test_x)
@@ -636,7 +636,7 @@ if __name__ == '__main__':
     for name in chamber_name:
         freq = df[df['name'] == name]['freq'].values[0][0]
         load_ = trimed_df[trimed_df['name'] == name]['loaded'].values[0]
-        load_x.append([load_] + list(np.log(np.abs(freq[10:20]))))
+        load_x.append([load_] + list(np.log(np.abs(freq[15:25]))))
 
 
     load_x = np.array(load_x)
@@ -644,7 +644,7 @@ if __name__ == '__main__':
     train_x = load_x[:int(len(load_x) * 0.8), :]
     test_x = load_x[int(len(load_x) * 0.8):, :]
 
-    load_model_pca = PCA(n_components=4)
+    load_model_pca = PCA(n_components=6)
     load_class_scv = svm.SVC()
 
     load_model_pca.fit(train_x[:, 1:])

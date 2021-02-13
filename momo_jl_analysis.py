@@ -45,11 +45,11 @@ def draw_contour(ch=None, ch_name=None, channel='phase', time=0, fov_jl=None,
     :param fov_jl: memory data
     :return: channel image with cell contour.
     """
-    if ch:
+    if ch != None:
         ch_na = fov_jl['chamber_loaded_name'][ch]
-        # ch_index = list(range(len(fov_jl['chamber_loaded_name'])))[ch]
     else:
         ch_na = ch_name
+    # print(ch_na)
 
     channl_key = dict(phase='chamber_phase_images',
                       green='chamber_green_images',
@@ -185,7 +185,6 @@ ax.imshow(ims_chamber[chamber_names[ch1]][0])
 
 fig1.show()
 
-
 # chamber_im = ims_chamber[chamber_names[9]]
 fig1, ax = plt.subplots(1, 1)
 # ax.imshow(chamber_im[0])
@@ -196,8 +195,8 @@ for name in chamber_names:
 fig1.show()
 
 # %%  show specific channels along time
-ch = 4
-time = [0, -1, 5]
+ch = 0
+time = [0, 4]
 ims_with_cnt_green = draw_contour(ch=ch, channel='green', time=time, fov_jl=fov_jl,
                                   color=GREEN_COLOR, threshold=600, contours=False)
 ims_with_cnt_red = draw_contour(ch=ch, channel='red', time=time, fov_jl=fov_jl,
