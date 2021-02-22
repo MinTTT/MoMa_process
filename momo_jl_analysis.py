@@ -30,7 +30,8 @@ GREEN_COLOR = (0, 255, 0)  # RGB
 RED_COLOR = (255, 0, 0)  # RGB
 
 
-def draw_contour(ch=None, ch_name=None, channel='phase', time=0, fov_jl=None,
+def draw_contour(ch=None, ch_name=None,
+                 channel='phase', time=0, fov_jl=None,
                  contours=True, color=None, threshold=None, conat=True):
     """
     draw contours in chamber for checking the images' segmentation.

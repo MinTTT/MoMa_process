@@ -488,7 +488,7 @@ class MomoFov:
 
     def dump_data(self, compress=True):
         print(f"[{self.fov_name}] -> dump memory data.\n")
-        if self.dataframe_mother_cells:
+        if isinstance(self.dataframe_mother_cells, pd.DataFrame):
             self.dataframe_mother_cells.to_csv(os.path.join(self.dir, self.fov_name + '_statistic.csv'))
         save_data = dict(directory=self.dir,
                          fov_name=self.fov_name,
