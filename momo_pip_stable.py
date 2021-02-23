@@ -38,7 +38,7 @@ def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
 
 # %%
 if __name__ == '__main__':
-    DIR = r'G:\ubuntu_data\20210124'
+    DIR = r'G:\ubuntu_data\20210130_pECJ3_M5_L3_2'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num

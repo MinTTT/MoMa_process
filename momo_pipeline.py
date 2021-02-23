@@ -509,9 +509,9 @@ class MomoFov:
                          mother_cells_dataframe=self.dataframe_mother_cells
                          )
         if 'green' in self.channels:
-            save_data['chamber_green_images'] = self.chamber_green_ims,
+            save_data['chamber_green_images'] = self.chamber_green_ims
         if 'red' in self.channels:
-            save_data['chamber_red_images'] = self.chamber_red_ims,
+            save_data['chamber_red_images'] = self.chamber_red_ims
         if compress:
             dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lz4')
         print(f"[{self.fov_name}] -> memory data saved successfully.\n")
@@ -593,7 +593,7 @@ if __name__ == '__main__':
     fovs_num = len(fovs_name)
 
     chamber_info = []
-    for fov_i in range(fovs_num):
+    for fov_i in range(50):
         fov = fovs_name.pop()
         fov.detect_channels()
         load_index, grey, freq = fov.detect_frameshift()
@@ -605,7 +605,7 @@ if __name__ == '__main__':
     load_df_all = pd.concat(chamber_info)
     load_df_all.index = pd.Index(np.arange(len(load_df_all)))
     load_df_all.to_csv(os.path.join(DIR, 'chamber_load', 'load_train_data.csv'))
-
+    dump(load_df_all, filename=os.path.join(DIR, 'chamber_load', 'load_train_data.pd'))
 
     test_x = []
     chamber_name = list(load_df_all['name'].values)
