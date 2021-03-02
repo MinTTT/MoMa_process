@@ -64,8 +64,11 @@ async def asy_pip(fov1, fov2):
 
 def paral_read_csv(ps):
     return pd.read_csv(os.path.join(DIR, ps))
-# %%
-DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
+
+
+
+#%%
+DIR = r'test_data_set/test_data'
 
 fovs_name = mp.get_fovs_name(DIR)
 fovs_num = len(fovs_name)

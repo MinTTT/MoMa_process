@@ -10,3 +10,9 @@ __pycache__
 # Ignore debugging file:
 debugging.py
 dask-worker-space
+*.csv
+*.jl
+*.avi
+*.svg
+*.tiff
+*.pd

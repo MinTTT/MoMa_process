@@ -161,7 +161,7 @@ def parallel_seg_input(ims, box, size=(256, 32)):
     subims = ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
     ims_num = len(subims)
     resize_ims = np.empty((ims_num,) + size)
-    _ = Parallel(n_jobs=30, require='sharedmem')(delayed(resize_map)(im_inx, size) for im_inx in range(ims_num))
+    _ = Parallel(n_jobs=32, require='sharedmem')(delayed(resize_map)(im_inx, size) for im_inx in range(ims_num))
     return resize_ims, subims
 
 
@@ -278,10 +278,10 @@ class MomoFov:
         xcorr_one = int(self.drift_values[0][0])
         ycorr_one = int(self.drift_values[1][0])
         for box in self.chamberboxes:  # TODO: frame shift have bug.
-            box['ytl'] += xcorr_one
-            box['ybr'] += xcorr_one
-            box['xtl'] -= ycorr_one
+            box['xtl'] -= xcorr_one
+            box['xbr'] -= xcorr_one
             box['ytl'] -= ycorr_one
+            box['ybr'] -= ycorr_one
         # -------------detect whether chambers were loaded with cells--------
         num_time = len(self.times['phase'])
         sample_index = np.random.choice(range(num_time), 10)
@@ -348,7 +348,6 @@ class MomoFov:
         # Run segmentation U-Net:
         seg = model_seg.predict(seg_inputs)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
-
         # -------------- reform the size--------------
         def parallel_rearange_mask(t, chn):
             frame_index = t + chn * len(self.times['phase'])
@@ -593,7 +592,7 @@ if __name__ == '__main__':
     fovs_num = len(fovs_name)
 
     chamber_info = []
-    for fov_i in range(50):
+    for fov_i in range(fovs_num):
         fov = fovs_name.pop()
         fov.detect_channels()
         load_index, grey, freq = fov.detect_frameshift()
@@ -605,7 +604,7 @@ if __name__ == '__main__':
     load_df_all = pd.concat(chamber_info)
     load_df_all.index = pd.Index(np.arange(len(load_df_all)))
     load_df_all.to_csv(os.path.join(DIR, 'chamber_load', 'load_train_data.csv'))
-    dump(load_df_all, filename=os.path.join(DIR, 'chamber_load', 'load_train_data.pd'))
+
 
     test_x = []
     chamber_name = list(load_df_all['name'].values)
