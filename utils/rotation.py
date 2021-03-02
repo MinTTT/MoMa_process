@@ -164,11 +164,11 @@ def rotate_fov(ims, crop=True):
     :return:
     '''
     num_fov = len(ims)
-    rot_angles = Parallel(n_jobs=30)(delayed(find_rotation)(ims[idx_fov, ...]) for idx_fov in range(num_fov))
+    rot_angles = Parallel(n_jobs=32)(delayed(find_rotation)(ims[idx_fov, ...]) for idx_fov in range(num_fov))
     if crop:
-        rot_ims = Parallel(n_jobs=30)(delayed(crop_images)(ims[idx_fov, ...], rot_angles[idx_fov])
+        rot_ims = Parallel(n_jobs=32)(delayed(crop_images)(ims[idx_fov, ...], rot_angles[idx_fov])
                                       for idx_fov in range(num_fov))
     else:
-        rot_ims = Parallel(n_jobs=30)(delayed(rotate_image)(ims[idx_fov, ...], rot_angles[idx_fov])
+        rot_ims = Parallel(n_jobs=32)(delayed(rotate_image)(ims[idx_fov, ...], rot_angles[idx_fov])
                                       for idx_fov in range(num_fov))
     return np.array(rot_ims), np.array(rot_angles)

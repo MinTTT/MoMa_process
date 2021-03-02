@@ -46,7 +46,7 @@ def draw_contour(ch=None, ch_name=None,
     :param fov_jl: memory data
     :return: channel image with cell contour.
     """
-    if ch != None:
+    if ch is not None:
         ch_na = fov_jl['chamber_loaded_name'][ch]
     else:
         ch_na = ch_name
@@ -150,7 +150,7 @@ def rangescale(frame, rescale, threshold=None) -> np.ndarray:
 
 
 # %%
-DIR = r'./test_data_set/jl_data'
+DIR = r'./test_data_set/test_data'
 jl_file = find_jl(DIR)
 fov_jl = load(jl_file[0])
 
@@ -179,7 +179,7 @@ def image_conv(imas):
 
 ims_chamber = fov_jl['chamber_phase_images']
 chamber_names = list(ims_chamber.keys())
-ch1 = 18
+ch1 = 0
 
 fig1, ax = plt.subplots(1, 1)
 ax.imshow(ims_chamber[chamber_names[ch1]][0])
@@ -194,10 +194,25 @@ for name in chamber_names:
     ax.plot(frq, np.log(abs(sg)))
 # ax.plot(freq[mask], abs(sg[mask]))
 fig1.show()
+#%%
+# lineage linking
 
-# %%  show specific channels along time
-ch = 0
-time = [0, 4]
+
+
+#%%
+ch = 3
+time = [0, -1]
+
+ims_with_cnt = draw_contour(ch=ch, channel='phase', time=time, fov_jl=fov_jl)
+
+fig1, ax = plt.subplots(1, 1)
+ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
+ax.grid(False)
+fig1.show()
+
+# %%  show specific fluorescent channels along time
+ch = 4
+time = [0, -1]
 ims_with_cnt_green = draw_contour(ch=ch, channel='green', time=time, fov_jl=fov_jl,
                                   color=GREEN_COLOR, threshold=600, contours=False)
 ims_with_cnt_red = draw_contour(ch=ch, channel='red', time=time, fov_jl=fov_jl,
@@ -208,8 +223,7 @@ fig1, ax = plt.subplots(1, 1)
 ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
 ax.grid(False)
 fig1.show()
-# %%
-
+# %% animation of channel along time
 
 import numpy as np
 import matplotlib.pyplot as plt

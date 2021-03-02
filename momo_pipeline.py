@@ -6,6 +6,7 @@
 
 # Built-in/Generic Imports
 import os
+import platform
 import sys
 # […]
 
@@ -47,19 +48,20 @@ if gpus:
     try:
         tf.config.experimental.set_virtual_device_configuration(
             gpus[0],
-            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2 * 2048)])
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5 * 2048)])
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
     except RuntimeError as e:
         # Virtual devices must be set before GPUs have been initialized
         print(e)
 
-model_file = r'test_data_set/model/chambers_id_tessiechamp_old.hdf5'
+model_file = r'./test_data_set/model/chambers_id_tessiechamp_old.hdf5'
 seg_model_file = r'./test_data_set/model/unet_moma_seg_multisets.hdf5'
 min_chamber_area = 3e3
 target_size = (512, 512)
 input_size = target_size + (1,)
 process_size = 200
+print('[Momo] -> Loading models')
 model_chambers = unet_chambers(input_size=input_size)
 model_chambers.load_weights(model_file)
 target_size_seg = (256, 32)
@@ -67,8 +69,8 @@ model_seg = unet_seg(input_size=target_size_seg + (1,))
 model_seg.load_weights(seg_model_file)
 
 colors_2 = ['#FFA2A8', '#95FF57']  # red, green
-
-
+global plf
+plf = platform.system()
 def get_channel_name(dir, name):
     return os.listdir(os.path.join(dir, name))
 
@@ -161,8 +163,11 @@ def parallel_seg_input(ims, box, size=(256, 32)):
     subims = ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
     ims_num = len(subims)
     resize_ims = np.empty((ims_num,) + size)
-    _ = Parallel(n_jobs=30, require='sharedmem')(delayed(resize_map)(im_inx, size) for im_inx in range(ims_num))
+    _ = Parallel(n_jobs=32, require='sharedmem')(delayed(resize_map)(im_inx, size) for im_inx in range(ims_num))
     return resize_ims, subims
+
+
+
 
 
 class MomoFov:
@@ -262,9 +267,28 @@ class MomoFov:
             self.rotation[inx] = angl
             return None
 
+        def parallel_input_processing(fn, dirct, dir, fov_name):
+            im, tp = get_im_time(os.path.join(dir, fov_name, 'phase', fn))
+            im, angl = rotate_fov(np.expand_dims(im, axis=0), crop=False)
+            if dirct == 0:
+                im = im[:, ::-1, :]
+            return dict(im=rangescale(im.squeeze(), (0, 1)), tp=tp, angl=angl)
+
         # --------------------- input all phase images --------------------------------------
-        _ = Parallel(n_jobs=30, require='sharedmem')(
+        _ = Parallel(n_jobs=64, require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
+        # if plf != 'Linux':
+        #     _ = Parallel(n_jobs=64, require='sharedmem')(
+        #         delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
+        # else:
+        #     print(f'[{self.fov_name}] -> loading phase images by multi-processing. \n')
+        #     input_im_meta = Parallel(n_jobs=1)(
+        #         delayed(parallel_input_processing)(fn, self.chamber_direction, self.dir, self.fov_name)
+        #         for fn in tqdm(self.times['phase']))
+        #     for time_i in range(len(input_im_meta)):
+        #         self.phase_ims[time_i, ...] = input_im_meta[time_i]['im']
+        #         self.time_points['phase'][time_i] = input_im_meta[time_i]['tp']
+        #         self.rotation[time_i] = input_im_meta[time_i]['angl']
 
         print(f'[{self.fov_name}] -> ims shape is {self.phase_ims.shape}.')
         # --------------------- input all phase images --------------------------------------
@@ -278,10 +302,10 @@ class MomoFov:
         xcorr_one = int(self.drift_values[0][0])
         ycorr_one = int(self.drift_values[1][0])
         for box in self.chamberboxes:  # TODO: frame shift have bug.
-            box['ytl'] += xcorr_one
-            box['ybr'] += xcorr_one
-            box['xtl'] -= ycorr_one
+            box['xtl'] -= xcorr_one
+            box['xbr'] -= xcorr_one
             box['ytl'] -= ycorr_one
+            box['ybr'] -= ycorr_one
         # -------------detect whether chambers were loaded with cells--------
         num_time = len(self.times['phase'])
         sample_index = np.random.choice(range(num_time), 10)
@@ -348,11 +372,11 @@ class MomoFov:
         # Run segmentation U-Net:
         seg = model_seg.predict(seg_inputs)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_minisize)
-
         # -------------- reform the size--------------
         def parallel_rearange_mask(t, chn):
             frame_index = t + chn * len(self.times['phase'])
             ori_frames[t] = cv2.resize(self.cell_mask[frame_index], ori_frames.shape[2:0:-1])
+
 
         for m, box in enumerate(self.loaded_chamber_box):
             ori_frames = np.empty([len(self.times['phase']), box['ybr'] - box['ytl'], box['xbr'] - box['xtl']]).astype(
@@ -363,6 +387,7 @@ class MomoFov:
 
             _ = Parallel(n_jobs=64, require='sharedmem')(delayed(parallel_rearange_mask)(t, m)
                                                          for t in range(len(self.times['phase'])))
+
 
             self.chamber_cells_mask[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_frames
         # -------------- get cells contour ------------
@@ -410,9 +435,12 @@ class MomoFov:
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
                     red_time_points[time] = time_point
             return time
-
-        _ = Parallel(n_jobs=128, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
-                                                      for inx_t, time in enumerate(tqdm(self.times['phase'])))
+        if plf != 'Linux':
+            _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
+                                                          for inx_t, time in enumerate(tqdm(self.times['phase'])))
+        else:
+            _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
+                                                          for inx_t, time in enumerate(tqdm(self.times['phase'])))
 
         if 'green' in self.channels:
             self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
@@ -593,7 +621,7 @@ if __name__ == '__main__':
     fovs_num = len(fovs_name)
 
     chamber_info = []
-    for fov_i in range(50):
+    for fov_i in range(fovs_num):
         fov = fovs_name.pop()
         fov.detect_channels()
         load_index, grey, freq = fov.detect_frameshift()
@@ -605,7 +633,7 @@ if __name__ == '__main__':
     load_df_all = pd.concat(chamber_info)
     load_df_all.index = pd.Index(np.arange(len(load_df_all)))
     load_df_all.to_csv(os.path.join(DIR, 'chamber_load', 'load_train_data.csv'))
-    dump(load_df_all, filename=os.path.join(DIR, 'chamber_load', 'load_train_data.pd'))
+
 
     test_x = []
     chamber_name = list(load_df_all['name'].values)

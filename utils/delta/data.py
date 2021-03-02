@@ -8,7 +8,7 @@ from __future__ import print_function
 import numpy as np 
 import os, glob, re, random, warnings, copy, importlib
 import skimage.io as io
-import skimage.external.tifffile as tiflib
+import tifffile as tiflib
 import skimage.transform as trans
 from skimage.measure import label
 from skimage.morphology import square, binary_opening, medial_axis, remove_small_objects
