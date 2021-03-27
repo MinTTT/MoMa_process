@@ -11,7 +11,6 @@ import pandas as pd
 # Own modules
 import momo_pipeline as mp
 from joblib import dump
-
 import dask
 from dask.diagnostics import ProgressBar
 from tqdm import tqdm
@@ -40,7 +39,7 @@ def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
 if __name__ == '__main__':
     THREADING = False
     print('[Momo] -> Loading Files')
-    DIR = r'/home/fulab/fh_group_server/20210202_pECJ3_M5_L2'
+    DIR = r'./test_data_set/test_data'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
