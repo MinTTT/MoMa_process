@@ -11,7 +11,6 @@ import pandas as pd
 # Own modules
 import momo_pipeline as mp
 from joblib import dump
-
 import dask
 from dask.diagnostics import ProgressBar
 from tqdm import tqdm
@@ -33,14 +32,15 @@ def paral_read_csv(ps):
 def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
     obj.process_flow_CPU()
     exitthread[thread_init] = True
+    del obj
     return None
 
 
 # %%
 if __name__ == '__main__':
-    THREADING = False
+    THREADING = True
     print('[Momo] -> Loading Files')
-    DIR = r'/home/fulab/fh_group_server/20210202_pECJ3_M5_L2'
+    DIR = r'/home/fulab/data/20210225_pECJ3_M5_L3'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num

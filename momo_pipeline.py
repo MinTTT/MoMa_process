@@ -14,9 +14,11 @@ import sys
 import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
-
+import _thread as thread
 import time
 # […]
+
+lock = thread.allocate_lock()
 
 # Own modules
 from utils.delta.data import postprocess
@@ -72,6 +74,7 @@ colors_2 = ['#FFA2A8', '#95FF57']  # red, green
 global plf
 plf = platform.system()
 def get_channel_name(dir, name):
+
     return os.listdir(os.path.join(dir, name))
 
 
@@ -258,7 +261,9 @@ class MomoFov:
         self.rotation = [None] * len(self.times['phase'])
 
         def parallel_input(fn, inx):
+            lock.acquire()
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
+            lock.release()
             im, angl = rotate_fov(np.expand_dims(im, axis=0), crop=False)
             if self.chamber_direction == 0:
                 im = im[:, ::-1, :]
@@ -418,9 +423,11 @@ class MomoFov:
             if 'green' in self.channels:
                 if time in self.times['green']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
+                    lock.acquire()
                     green_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'green', time),
                                                             drift_valu, self.rotation[inx_t][0],
                                                             self.chamber_direction)
+                    lock.release()
                     green_im = back_corrt(green_im.astype(np.float64))  # fluorescence background correct
                     green_channels[time] = [cropbox(green_im, cb) for cb in self.loaded_chamber_box]
                     green_time_points[time] = time_point
@@ -428,9 +435,11 @@ class MomoFov:
             if 'red' in self.channels:
                 if time in self.times['red']:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
+                    lock.acquire()
                     red_im, time_point = get_fluo_channel(os.path.join(self.dir, self.fov_name, 'red', time),
                                                           drift_valu, self.rotation[inx_t][0],
                                                           self.chamber_direction)
+                    lock.release()
                     red_im = back_corrt(red_im.astype(np.float64))
                     red_channels[time] = [cropbox(red_im, cb) for cb in self.loaded_chamber_box]
                     red_time_points[time] = time_point
@@ -552,17 +561,18 @@ class MomoFov:
         self.detect_frameshift()
         print(f'[{self.fov_name}] -> detect cells.\n')
         self.cell_detection()
-
-    def process_flow_CPU(self):
         print(f"[{self.fov_name}] -> extract cells' features.\n")
         self.extract_mother_cells_features()
+
+    def process_flow_CPU(self):
+
         print(f"[{self.fov_name}] -> get mother cells data.\n")
         self.parse_mother_cell_data()
         self.dump_data()
         return None
 
 
-def get_fovs_name(dir, all_fov=False):
+def get_fovs_name(dir, all_fov=False, sort=True):
     """
     Get fovs name under dir, if fovs in dir have been treated (i.e. having a memory obj in folder dir), these fovs will
     not returned.
@@ -574,13 +584,16 @@ def get_fovs_name(dir, all_fov=False):
     jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
     fov_folder = [folder for folder in os.listdir(DIR)
                   if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
+
     if all_fov == False:
         untreated = list(set(fov_folder) - set(jl_file))
-        untreated.sort(key=lambda name: int(name.split('_')[-1]))
+        if sort == True:
+            untreated.sort(key=lambda name: int(name.split('_')[-1]))
         fovs_name = [MomoFov(folder, DIR) for folder in untreated]
         return fovs_name
     else:
-        fov_folder.sort(key=lambda name: int(name.split('_')[-1]))
+        if sort == True:
+            fov_folder.sort(key=lambda name: int(name.split('_')[-1]))
         fovs_name = [MomoFov(folder, DIR) for folder in fov_folder]
         return fovs_name
 
