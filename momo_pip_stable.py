@@ -67,9 +67,6 @@ if __name__ == '__main__':
 
         del to_process
 
-
-
-
     all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and file.split('_')[0] == 'fov')]
     all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv_name]
     with ProgressBar():
