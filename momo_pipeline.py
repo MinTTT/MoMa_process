@@ -261,7 +261,7 @@ class MomoFov:
         self.rotation = [None] * len(self.times['phase'])
 
         def parallel_input(fn, inx):
-            lock.acquire()
+            lock.acquire()  # async io is important when using the linux system.
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, 'phase', fn))
             lock.release()
             im, angl = rotate_fov(np.expand_dims(im, axis=0), crop=False)
@@ -369,7 +369,7 @@ class MomoFov:
                 sub_inputs, ori_chn_imgs = parallel_seg_input(self.phase_ims, chamberbox)
                 seg_inputs += (sub_inputs,)
                 self.chamber_phase_ims[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_chn_imgs
-        seg_inputs = np.concatenate(seg_inputs, axis=0)
+        seg_inputs = np.copy(np.concatenate(seg_inputs, axis=0))
         del self.phase_ims  # release memory
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
         self.chamber_seg = seg_inputs
@@ -561,11 +561,10 @@ class MomoFov:
         self.detect_frameshift()
         print(f'[{self.fov_name}] -> detect cells.\n')
         self.cell_detection()
-        print(f"[{self.fov_name}] -> extract cells' features.\n")
-        self.extract_mother_cells_features()
 
     def process_flow_CPU(self):
-
+        print(f"[{self.fov_name}] -> extract cells' features.\n")
+        self.extract_mother_cells_features()
         print(f"[{self.fov_name}] -> get mother cells data.\n")
         self.parse_mother_cell_data()
         self.dump_data()

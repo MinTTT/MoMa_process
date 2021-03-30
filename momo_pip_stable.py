@@ -40,7 +40,7 @@ def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
 if __name__ == '__main__':
     THREADING = True
     print('[Momo] -> Loading Files')
-    DIR = r'/home/fulab/data/20210225_pECJ3_M5_L3'
+    DIR = r'/home/fulab/fh_group_server/homes/panchu/image/MoMa/20210202_pECJ3_M5_L2'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
