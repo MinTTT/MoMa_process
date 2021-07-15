@@ -151,12 +151,17 @@ def back_corrt(im: np.ndarray) -> np.ndarray:
 
 def get_im_time(ps):
     """
-    get the image time
+    get the image acq_tim
     :param ps: str
-    :return: (image ndarray, time point string)
+    :return: (image ndarray, acq_tim point string)
     """
     with tif.TiffFile(ps) as tim:
-        return tim.asarray(), tim.shaped_metadata[0]['time']
+        try:
+            acq_tim = tim.shaped_metadata[0]['time']
+        except TypeError:
+            acq_tim = None
+
+        return tim.asarray(), acq_tim
 
 
 def get_fluo_channel(ps, drift, angle, direct):
@@ -348,6 +353,7 @@ class Cell:
         self.flu_level = None  # type: Optional[Dict[str, Any]]
         self.rectangle = None  # type: Optional[dict]
 
+
     def set_mask_init(self, cnt, size):
         self.contour_init = cnt
         self.mask_init, self.mask_xy = cv_full_contour2mask(cnt, size)
@@ -426,7 +432,7 @@ class MomoFov:
     times: Union[Dict[str, List[str]], None] = None
 
     def __init__(self, name, fov_dir_base: str, exp_mode=False,
-                 cell_minial_px: int = 100,
+                 cell_minial_px: int = 100, time_step=180.,
                  cell_detection='phase', quantify=None):
         """
         :param exp_mode:
@@ -441,6 +447,7 @@ class MomoFov:
         self.dir = fov_dir_base  # type: str  # where the fov fold contain.
         self.cell_mini_size = cell_minial_px  # type: int
         self.channels = get_channel_name(self.dir, self.fov_name)  # type: List[str] # channel names in list
+        quantify = [ch for ch in quantify if ch in self.channels]
         self.channels_function = {"cell_detection": cell_detection, "quantify": quantify}
         self.times = None
         self.phase_ims = None  # type: Union[np.ndarray, None]  # [time number, 0 axis, 1 axis]
@@ -468,6 +475,7 @@ class MomoFov:
         self.rotation = []
         self.experiment_mode = exp_mode  # type: bool
         self.ims_channels_dict = {ch: f"chamber_{ch}_ims" for ch in self.channels}
+        self.time_step = time_step  # type: float
         # cells is a dict. dict[chamber_name: dict[time: list[Cell]]]
         self.cells = None  # type: Optional[Dict[str, Dict[str,List[Cell]]]]
         self.fields_init()
@@ -491,11 +499,12 @@ class MomoFov:
         im = rangescale(im.squeeze(), rescale=(0, 1.))
         self.template_frame = im
         # TODO: if the images are not 2048 x 2048.
+
         firstframe = np.expand_dims(np.expand_dims(cv2.resize(im.squeeze(), (512, 512)), axis=0), axis=3)
         # using expand_dims to get it into a shape that the chambers id unet accepts
         # Find chambers, filter results, get bounding boxes:
         chambermask = model_chambers.predict(firstframe, verbose=0)
-        chambermask = cv2.resize(np.squeeze(chambermask), im.shape)  # scaling back to original size
+        chambermask = cv2.resize(np.squeeze(chambermask), im.shape[-1::-1])  # scaling back to original size
         chambermask = postprocess(chambermask, min_size=min_chamber_area)  # Binarization, cleaning and area filtering
         self.chamber_boxes = getChamberBoxes(np.squeeze(chambermask))
 
@@ -539,12 +548,13 @@ class MomoFov:
             """
             lock.acquire()  # async io is important when using the linux system.
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, channel_detect_cell, fn))
+            self.time_points[channel_detect_cell][fn] = tp
             lock.release()
             im, angl = rotate_fov(np.expand_dims(im, axis=0), crop=False)
             if self.chamber_direction == 0:
                 im = im[:, ::-1, :]
             self.phase_ims[inx, ...] = rangescale(im.squeeze(), (0, 1))
-            self.time_points[channel_detect_cell][fn] = tp
+
             self.rotation[inx] = angl
             return None
 
@@ -558,6 +568,13 @@ class MomoFov:
         # --------------------- input all phase images --------------------------------------
         _ = Parallel(n_jobs=64, require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times[channel_detect_cell])))
+        if None in self.time_points[channel_detect_cell].values():
+                times = np.arange(len(self.time_points[channel_detect_cell].values())) * self.time_step
+                for index, time_key in enumerate(self.time_points[channel_detect_cell].keys()):
+                    self.time_points[channel_detect_cell][time_key] = times[index]
+
+
+
         # if plf != 'Linux':
         #     _ = Parallel(n_jobs=64, require='sharedmem')(
         #         delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
@@ -600,11 +617,12 @@ class MomoFov:
                             box['xtl']:box['xbr']]
             mean_chamber = np.mean(half_chambers)
             chamber_graylevel.append(mean_chamber)
-            sg, frq = image_conv(np.expand_dims(selected_ims[0,
-                                                int(box['ytl'] + (box['ybr'] - box['ytl']) * 0.20):int(
-                                                    (box['ybr'] - box['ytl']) * 0.6 + box['ytl']),
-                                                box['xtl']:box['xbr']], axis=0))
-            chamber_frq.append([sg, frq])
+            if self.experiment_mode:
+                sg, frq = image_conv(np.expand_dims(selected_ims[0,
+                                                    int(box['ytl'] + (box['ybr'] - box['ytl']) * 0.20):int(
+                                                        (box['ybr'] - box['ytl']) * 0.6 + box['ytl']),
+                                                    box['xtl']:box['xbr']], axis=0))
+                chamber_frq.append([sg, frq])
 
         cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.6
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
@@ -829,12 +847,15 @@ class MomoFov:
                             flu_channels_dict[f"{key}_{stat_key}"] = stat_value
                     mother_cell_dict.update(flu_channels_dict)
                 self.mother_cell_pars[chamber].append(mother_cell_dict)
-                if self.mother_cell_pars[chamber]:
-                    pf = pd.DataFrame(data=self.mother_cell_pars[chamber])
+            if self.mother_cell_pars[chamber]:
+                pf = pd.DataFrame(data=self.mother_cell_pars[chamber])
+                try:
                     time = [float(t.split(',')[-1]) for t in pf['time_point']]
                     pf['time_s'] = time
-                    pf['chamber'] = [f'{self.fov_name}_{chamber}'] * len(pf)
-                    pf_list.append(pf)
+                except AttributeError:
+                    pass
+                pf['chamber'] = [f'{self.fov_name}_{chamber}'] * len(pf)
+                pf_list.append(pf)
         try:  # if have no mother
             self.dataframe_mother_cells = pd.concat(pf_list, sort=False)
             self.dataframe_mother_cells.index = pd.Index(range(len(self.dataframe_mother_cells)))
@@ -893,13 +914,15 @@ class MomoFov:
 if __name__ == '__main__':
     # %%
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
-    DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
+    # DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
+    DIR = r"./test_data_set/test_data"
     fovs_name = get_fovs_name(DIR, all_fov=True)
     fovs_num = len(fovs_name)
 
-    for fov in [fovs_name[0]]:
+    for fov in fovs_name:
         fov.process_flow_GPU()
         fov.process_flow_CPU()
+        del fov
     # fov1 = fovs_name[0]
     #
     # fov1.detect_channels()
@@ -1013,76 +1036,3 @@ if __name__ == '__main__':
     #     ax1[9].yaxis.tick_left()  # remove right y-Ticks
     #     fig1.show()
 
-# %%
-#
-# chamber_info = []
-# for fov_i in range(fovs_num):
-#     fov = fovs_name.pop()
-#     fov.detect_channels()
-#     load_index, grey, freq = fov.detect_frameshift()
-#     chambers_na = [f'{fov.fov_name}_{i}' for i in range(len(grey))]
-#     del fov
-#     load_list = [1 if ch_i in load_index else 0 for ch_i in range(len(grey))]
-#     load_pf = pd.DataFrame(data=dict(name=chambers_na, loaded=load_list, grey_value=grey, freq=freq))
-#     chamber_info.append(load_pf)
-# load_df_all = pd.concat(chamber_info)
-# load_df_all.index = pd.Index(np.arange(len(load_df_all)))
-# load_df_all.to_csv(os.path.join(DIR, 'chamber_load', 'load_train_data.csv'))
-#
-# test_x = []
-# chamber_name = list(load_df_all['name'].values)
-# for name in chamber_name:
-#     freq = load_df_all[load_df_all['name'] == name]['freq'].values[0][0]
-#     load_ = load_df_all[load_df_all['name'] == name]['loaded'].values[0]
-#     test_x.append([load_] + list(np.log(np.abs(freq[15:25]))))
-#
-# test_x = np.array(test_x)
-# # %%
-# from sklearn.decomposition import PCA
-# from sklearn import svm
-# from joblib import load
-#
-# load_x = []
-#
-# # for i, load in enumerate(if_loaded):
-# #     sg, freq = sg_freq[i]  # only use freq less than 25
-# #     sg = abs(np.log(sg[5:20]))
-# #     load_x.append(load + list(sg))
-#
-# ps_pd = r'test_data_set/test_data/pECJ3_M5_L3/chamber_load/load_train_data.pd'
-# ps = r'test_data_set/test_data/pECJ3_M5_L3/chamber_load/load_train_data_trimed.csv'
-# trimed_df = pd.read_csv(ps)
-# df = load(ps_pd)
-# chamber_name = list(trimed_df['name'].values)
-# for name in chamber_name:
-#     freq = df[df['name'] == name]['freq'].values[0][0]
-#     load_ = trimed_df[trimed_df['name'] == name]['loaded'].values[0]
-#     load_x.append([load_] + list(np.log(np.abs(freq[15:25]))))
-#
-# load_x = np.array(load_x)
-#
-# train_x = load_x[:int(len(load_x) * 0.8), :]
-# test_x = load_x[int(len(load_x) * 0.8):, :]
-#
-# load_model_pca = PCA(n_components=6)
-# load_class_scv = svm.SVC()
-#
-# load_model_pca.fit(train_x[:, 1:])
-#
-# model_pca_results = load_model_pca.transform(train_x[:, 1:])
-#
-# load_class_scv.fit(model_pca_results, train_x[:, 0])
-#
-# fig1, ax = plt.subplots(1, 1)
-#
-# ax.scatter(model_pca_results[:, 0], model_pca_results[:, 1], c=[colors_2[int(i)] for i in train_x[:, 0]])
-#
-# fig1.show()
-# # %%
-# reduction = load_model_pca.transform(test_x[:, 1:])
-# predict = load_class_scv.predict(reduction)
-# print(test_x[:, 0])
-# print(predict)
-# diff = predict - test_x[:, 0]
-# print(np.sum(np.abs(diff[diff < 0])) / len(predict))
-# %%
