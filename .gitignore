@@ -5,8 +5,7 @@
 # Ignore bytecode:
 __pycache__
 *.pyc
-.test_data_set/test_data
-.test_data_set/*
+test_data_set
 # Ignore debugging file:
 debugging.py
 dask-worker-space

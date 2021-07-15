@@ -42,7 +42,7 @@ async def asy_process(fov):
         print(f'Now, {fov.fov_name}: detect cells.\n')
         fov.cell_detection()
         print(f"Now, {fov.fov_name}: extract cells' features.\n")
-        fov.extract_mother_cells_features()
+        fov.extract_cells_features()
         print(f"Now, {fov.fov_name}: get mother cells data.\n")
         fov.parse_mother_cell_data()
     return None
@@ -98,7 +98,7 @@ fov1 = fovs_name[0]
 fov1.detect_channels()
 fov1.detect_frameshift()
 fov1.cell_detection()
-fov1.extract_mother_cells_features()
+fov1.extract_cells_features()
 fov1.parse_mother_cell_data()
 # %% dump jl
 from joblib import load
