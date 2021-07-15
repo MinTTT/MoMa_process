@@ -8,6 +8,7 @@
 import os
 # Libs
 import pandas as pd
+import numpy as np
 # Own modules
 import momo_pipeline as mp
 from joblib import dump
@@ -30,23 +31,29 @@ def paral_read_csv(ps):
 
 
 def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
+    threading_working[thread_init] = True
     obj.process_flow_CPU()
     exitthread[thread_init] = True
+    threading_working[thread_init] = False
     del obj
     return None
 
 
 # %%
 if __name__ == '__main__':
-    THREADING = True
+    THREADING = False
+    THREADING_Limit = 2
     print('[Momo] -> Loading Files')
-    DIR = r'/home/fulab/fh_group_server/homes/panchu/image/MoMa/20210202_pECJ3_M5_L2'
+    DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
     fovs_name = mp.get_fovs_name(DIR)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
+    threading_working = [False] * fovs_num
     init = 0
     if THREADING:
         while fovs_name:
+            while np.sum(threading_working) > THREADING_Limit:
+                time.sleep(5)
             to_process = fovs_name.pop(0)
             print(f'Processing {init + 1}/{fovs_num}')
             to_process.process_flow_GPU()

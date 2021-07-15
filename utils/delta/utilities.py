@@ -6,9 +6,10 @@ to minimize the risk of unforeseen bugs.
 @author: jblugagne
 '''
 import cv2, os, re
+# import numpy
 import numpy as np
 from joblib import Parallel, delayed
-
+from typing import Union
 def deskew(image):
     '''
     Compute rotation angle of chambers in image for rotation correction.
@@ -114,7 +115,7 @@ def rangescale(frame, rescale):
     return frame
 
 
-def driftcorr(img, template=None, box=None, drift=None, parallel=True):
+def driftcorr(img: np.ndarray, template=None, box=None, drift=None, parallel=True):
     '''
     Compute drift between current frame and the reference, and return corrected
     image
@@ -226,7 +227,7 @@ def getChamberBoxes(chambersmask):
     return chamberboxes
 
 
-def getDriftTemplate(chamberboxes, img):
+def getDriftTemplate(chamberboxes, img) -> Union[np.ndarray, None]:
     '''
     This function retrieves a region above the chambers to use as drift template
 
@@ -288,13 +289,13 @@ def getSinglecells(seg):
 
 
 def getTrackingScores(inputs, outputs):
-    '''
+    """
     Get overlap scores between input/target cells and tracking outputs
 
     Parameters
     ----------
     inputs : 2D array of floats
-        Segmentation mask of input/target cells that the tracking U-Net is 
+        Segmentation mask of input/target cells that the tracking U-Net is
         tracking against. (ie segmentation mask of the 'current'/'new' frame)
     outputs : 4D array of floats
         Tracking U-Net output. For each cell in the 'old'/'previous' frame,
@@ -304,24 +305,24 @@ def getTrackingScores(inputs, outputs):
     Returns
     -------
     scores : 3D array of floats
-        Overlap scores matrix between tracking predictions and current 
-        segmentation mask for each new-old cell, either as a mother or a 
-        daughter cell. Cells from the 'old' frame (axis 0) will get a tracking 
-        score that corresponds to how much the U-Net tracking output mask 
-        overlaps with the segmentation mask of each cell in the 'new' mask 
-        (axis 1). Each old cell gets a tracking scores for each new cell as 
-        either a potential daughter (mother-daughter relationship, index 1 on 
+        Overlap scores matrix between tracking predictions and current
+        segmentation mask for each new-old cell, either as a mother or a
+        daughter cell. Cells from the 'old' frame (axis 0) will get a tracking
+        score that corresponds to how much the U-Net tracking output mask
+        overlaps with the segmentation mask of each cell in the 'new' mask
+        (axis 1). Each old cell gets a tracking scores for each new cell as
+        either a potential daughter (mother-daughter relationship, index 1 on
         axis 2) or as just itself (mother-mother relationship, index 0 on axis
         2)
         Example:
             attrib[1,3,0] == 1 means the 'mother' tracking output of cell #2 in
-            the old frame completely overlaps with the mask of cell #4 in the 
+            the old frame completely overlaps with the mask of cell #4 in the
             new frame.
             attrib[4,6,1] == 0.7 means the 'daughter' tracking output of cell
             #5 in the old frame overlaps with 70% of the mask of cell #7 in the
             new frame.
 
-    '''
+    """
     targetcells = getSinglecells(inputs).astype(np.uint8)
     scores = np.zeros([outputs.shape[0], targetcells.shape[0], 2], dtype=np.float32)
     for o in range(outputs.shape[0]):
@@ -334,7 +335,7 @@ def getTrackingScores(inputs, outputs):
 
 
 def getOverlap(output, target):
-    '''
+    """
     Get portion of tracking output overlapping on target cell
 
     Parameters
@@ -349,7 +350,7 @@ def getOverlap(output, target):
     float
         Portion of target cell that is covered by the tracking output.
 
-    '''
+    """
     return cv2.sumElems(
         cv2.bitwise_and(output,
                         target)

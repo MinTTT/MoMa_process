@@ -179,7 +179,7 @@ def get_describe(sample: list, column_keys: list) -> pd.DataFrame:
 # […]
 
 # %% ND2 reader
-ND2_FILE_DIR = r'X:/chupan/AGAR_PAD/20201214_AGARPAD/'
+ND2_FILE_DIR = r'/home/fulab/fh_group_server/homes/panchu/image/AGARPAD'
 MODEL_FILE = r'./test_data_set/model/delta_pads_seg.hdf5'
 FILE_NAME = os.listdir(ND2_FILE_DIR)
 ND2_FILE_NAME = [file for file in FILE_NAME if file.split('.')[-1] == 'nd2']

@@ -69,7 +69,7 @@ try:
     # noinspection PyUnresolvedReferences
     import cv2
 
-    def rotate_image(image, angle):
+    def rotate_image(image: np.ndarray, angle) -> np.ndarray:
         """
         Rotates image for angle degrees. Shape remains the same.
 
