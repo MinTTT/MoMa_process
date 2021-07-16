@@ -593,6 +593,8 @@ class MomoFov:
             for index, time_key in enumerate(self.time_points[channel_detect_cell].keys()):
                 self.time_points[channel_detect_cell][time_key] = times[index]
 
+
+
         # if plf != 'Linux':
         #     _ = Parallel(n_jobs=64, require='sharedmem')(
         #         delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times['phase'])))
@@ -925,7 +927,7 @@ if __name__ == '__main__':
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
     # DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
     DIR = r"./test_data_set/test_data"
-    fovs_name = get_fovs(DIR, all_fov=True)
+    fovs_name = get_fovs_name(DIR, all_fov=True)
     fovs_num = len(fovs_name)
 
     for fov in fovs_name:
@@ -1044,3 +1046,4 @@ if __name__ == '__main__':
     #     # ax1[9].yaxis.set_ticks(np.arange(0, 16, 1))  # set y-ticks
     #     ax1[9].yaxis.tick_left()  # remove right y-Ticks
     #     fig1.show()
+
