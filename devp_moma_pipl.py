@@ -70,7 +70,7 @@ def paral_read_csv(ps):
 #%%
 DIR = r'test_data_set/test_data'
 
-fovs_name = mp.get_fovs_name(DIR)
+fovs_name = mp.get_fovs(DIR)
 fovs_num = len(fovs_name)
 init = 0
 while fovs_name:

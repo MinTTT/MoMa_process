@@ -45,7 +45,7 @@ if __name__ == '__main__':
     THREADING_Limit = 2
     print('[Momo] -> Loading Files')
     DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
-    fovs_name = mp.get_fovs_name(DIR)
+    fovs_name = mp.get_fovs(DIR)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
     threading_working = [False] * fovs_num

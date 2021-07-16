@@ -11,20 +11,17 @@ import sys
 # […]
 
 # Libs
-import pandas
 import pandas as pd
 import numpy as np  # Or any other
 from tqdm import tqdm
 import _thread as thread
-import time
-from typing import Tuple, Union, Dict, List
+from typing import Tuple, Union, Dict, List, Optional, Any
 from scipy.stats import binned_statistic
 from scipy.interpolate import UnivariateSpline
 from warnings import warn
-
+import subprocess as sbp
 # […]
 
-lock = thread.allocate_lock()
 
 # Own modules
 from utils.delta.data import postprocess
@@ -39,7 +36,6 @@ from utils.signal import vertical_mean
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from scipy.fftpack import fft, fftfreq
-from typing import List, Union, Optional, Any
 
 # import dask
 # # dask.config.set(pool=ThreadPool(64))
@@ -75,14 +71,33 @@ model_chambers.load_weights(model_file)
 target_size_seg = (256, 32)
 model_seg = unet_seg(input_size=target_size_seg + (1,))
 model_seg.load_weights(seg_model_file)
+lock = thread.allocate_lock()
 # %%
 colors_2 = ['#FFA2A8', '#95FF57']  # red, green
 global plf
 plf = platform.system()
 
 
+def move_img_subfold(base_dir, fold_name='phase'):
+    cmd = f"mkdir ./{fold_name}"
+    if plf == 'Linux':
+        OSTAG = True
+    else:
+        OSTAG = False
+    sbp.run(cmd, shell=OSTAG)
+    with os.scandir(base_dir) as file_it:
+        files = [file.name for file in file_it if file.is_file()]
+    cmd2 = f"mv -t {fold_name} {' '.join(files)}"
+    sbp.run(cmd2, shell=OSTAG)
+    return None
+
+
+
 def get_channel_name(dir, name) -> list:
-    return os.listdir(os.path.join(dir, name))
+    # files = os.listdir(os.path.join(dir, name))
+    with os.scandir(os.path.join(dir, name)) as file_it:
+        dirs = [file.name for file in file_it if file.is_dir()]
+    return dirs
 
 
 def box_2_pltrec(box):
@@ -110,10 +125,11 @@ def get_times(fov_dir_base: str, name: str, channels: List[str]) -> Dict[str, Li
     :return: dict: {channel_name:[list of file name]} int represents the acquisition order.
     """
     tim_dict = dict()
+    img_suffix = ['tif', 'tiff']
     for channel in channels:
         file_names = os.listdir(os.path.join(fov_dir_base, name, channel))  # type: List[str]
-        file_name = [fil_name for fil_name in file_names if fil_name.split(".")[-1] == 'tiff']
-        file_name.sort(key=lambda elem: int(elem.split('.')[0][1:]))  # example tiff file name: t20.tiff
+        file_name = [fil_name for fil_name in file_names if fil_name.split(".")[-1] in img_suffix]
+        file_name.sort(key=lambda elem: int(elem.split('.')[0].split('t')[-1]))  # example tiff file name: t20.tiff
         tim_dict[channel] = file_name
     return tim_dict
 
@@ -202,7 +218,7 @@ def parallel_seg_input(ims, box, size=(256, 32)):
     return resize_ims, subims
 
 
-def get_fovs_name(dir, all_fov=False, sort=True):
+def get_fovs(dir, all_fov=False, sort=True, **kwargs):
     """
     Get fovs name under dir, if fovs in dir have been treated (i.e. having a memory obj in folder dir), these fovs will
     not returned.
@@ -210,21 +226,22 @@ def get_fovs_name(dir, all_fov=False, sort=True):
     :param all_fov: bool, if True, return all folders, default, False.
     :return: list
     """
+    fov_tag = ['fov', 'pos']
     DIR = dir
     jl_file = [jl_name.split('.')[0] for jl_name in os.listdir(DIR) if jl_name.split('.')[-1] == 'jl']
     fov_folder = [folder for folder in os.listdir(DIR)
-                  if (folder.split('_')[0] == 'fov' and os.path.isdir(os.path.join(DIR, folder)))]
+                  if (folder[:3] in fov_tag and os.path.isdir(os.path.join(DIR, folder)))]
 
     if all_fov == False:
         untreated = list(set(fov_folder) - set(jl_file))
         if sort == True:
-            untreated.sort(key=lambda name: int(name.split('_')[-1]))
-        fovs_name = [MomoFov(folder, DIR) for folder in untreated]
+            untreated.sort(key=lambda name: int(name[3:]))
+        fovs_name = [MomoFov(folder, DIR, **kwargs) for folder in untreated]
         return fovs_name
     else:
         if sort == True:
-            fov_folder.sort(key=lambda name: int(name.split('_')[-1]))
-        fovs_name = [MomoFov(folder, DIR) for folder in fov_folder]
+            fov_folder.sort(key=lambda name: int(name[3:]))
+        fovs_name = [MomoFov(folder, DIR, **kwargs) for folder in fov_folder]
         return fovs_name
 
 
@@ -348,11 +365,10 @@ class Cell:
         self.spine = None
         self.spine_length = None
         self.area = None
-        self.umppx = umppx  # type: float  # miu m per pixel
+        self.umppx = umppx  # type: float  # nu m per pixel
         self.channel_imgs = None  # type: Optional[Dict[str, np.ndarray]]
         self.flu_level = None  # type: Optional[Dict[str, Any]]
         self.rectangle = None  # type: Optional[dict]
-
 
     def set_mask_init(self, cnt, size):
         self.contour_init = cnt
@@ -447,6 +463,9 @@ class MomoFov:
         self.dir = fov_dir_base  # type: str  # where the fov fold contain.
         self.cell_mini_size = cell_minial_px  # type: int
         self.channels = get_channel_name(self.dir, self.fov_name)  # type: List[str] # channel names in list
+        if len(self.channels) == 0:
+            self.channels = [cell_detection]
+            move_img_subfold(self.dir, fold_name='phase')
         quantify = [ch for ch in quantify if ch in self.channels]
         self.channels_function = {"cell_detection": cell_detection, "quantify": quantify}
         self.times = None
@@ -569,11 +588,9 @@ class MomoFov:
         _ = Parallel(n_jobs=64, require='sharedmem')(
             delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times[channel_detect_cell])))
         if None in self.time_points[channel_detect_cell].values():
-                times = np.arange(len(self.time_points[channel_detect_cell].values())) * self.time_step
-                for index, time_key in enumerate(self.time_points[channel_detect_cell].keys()):
-                    self.time_points[channel_detect_cell][time_key] = times[index]
-
-
+            times = np.arange(len(self.time_points[channel_detect_cell].values())) * self.time_step
+            for index, time_key in enumerate(self.time_points[channel_detect_cell].keys()):
+                self.time_points[channel_detect_cell][time_key] = times[index]
 
         # if plf != 'Linux':
         #     _ = Parallel(n_jobs=64, require='sharedmem')(
@@ -590,13 +607,13 @@ class MomoFov:
 
         print(f'[{self.fov_name}] -> ims shape is {self.phase_ims.shape}.')
         # --------------------- input all phase images --------------------------------------
-        driftcorbox = dict(xtl=0,
-                           xbr=None,
-                           ytl=0,
-                           ybr=max(self.chamber_boxes, key=lambda elem: elem['ytl'])['ytl']
-                           )  # Box to match template
+        drift_cor_box = dict(xtl=0,
+                             xbr=None,
+                             ytl=0,
+                             ybr=max(self.chamber_boxes, key=lambda elem: elem['ytl'])['ytl']
+                             )  # Box to match template
         self.phase_ims, self.drift_values = driftcorr(self.phase_ims,
-                                                      template=self.drift_template, box=driftcorbox)
+                                                      template=self.drift_template, box=drift_cor_box)
         xcorr_one = int(self.drift_values[0][0])
         ycorr_one = int(self.drift_values[1][0])
         for box in self.chamber_boxes:  # TODO: frame shift have bug.
@@ -613,7 +630,8 @@ class MomoFov:
         chamber_frq = []
 
         for box in self.chamber_boxes:
-            half_chambers = selected_ims[:, box['ytl']:int((box['ybr'] - box['ytl']) / 2 + box['ytl']),
+            half_chambers = selected_ims[:,
+                            box['ytl']:int((box['ybr'] - box['ytl']) / 2 + box['ytl']),
                             box['xtl']:box['xbr']]
             mean_chamber = np.mean(half_chambers)
             chamber_graylevel.append(mean_chamber)
@@ -713,11 +731,6 @@ class MomoFov:
                                                               for chamber_na in self.loaded_chamber_name}
             self.time_points[channel] = {}
 
-        # green_channels = dict()  # {time_name:[chamber_loaded_img, ...]}
-        # red_channels = dict()
-        # green_time_points = dict()  # {time_name: time_point}
-        # red_time_points = dict()
-
         def parallel_flur_seg(inx_t, time):
             """
             get all fluorescent images from disk and seg into channel XX_channels is a dictionary keys are file 
@@ -749,10 +762,6 @@ class MomoFov:
             _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
                                                          for inx_t, time in enumerate(tqdm(self.times['phase'])))
 
-        # if 'green' in self.channels:
-        #     self.time_points['green'] = [green_time_points[i] for i in self.times['green']]
-        # if 'red' in self.channels:
-        #     self.time_points['red'] = [red_time_points[i] for i in self.times['red']]
         self.cells = {chamber_name: {} for chamber_name in self.loaded_chamber_name}
         print(f'[{self.fov_name}] -> Optimize cell contour.')
         for cha_name_inx, chamber_name in enumerate(tqdm(self.loaded_chamber_name)):
@@ -784,12 +793,11 @@ class MomoFov:
                     # cell_mask_ori = cell_mask.copy()
                     iter_key = [True] * cells_number
                     for i in range(5):
-                        # print(i, iter_key)
                         for index, cell in enumerate(cells_list):
                             if iter_key[index]:
                                 cell_mask_od = cell.mask.copy()
                                 cell_mask = cell.mask.copy()
-                                cell_mask_edge, mask_edge_xy = cv_edge_fullmask2contour(cell_mask, thickness=1)
+                                cell_mask_edge, mask_edge_xy = cv_edge_fullmask2contour(cell_mask, thickness=2)
                                 # cell_mask_edge_2, mask_edge_xy_2 = cv_edge_fullmask2contour(cell_mask)
                                 cell_mask_edge = line_length_filter(cell_mask_edge, 6, 0)
                                 cell_mask_out, mask_out_xy = cv_out_edge_contour(cell.mask, axis=0)
@@ -851,9 +859,9 @@ class MomoFov:
                 pf = pd.DataFrame(data=self.mother_cell_pars[chamber])
                 try:
                     time = [float(t.split(',')[-1]) for t in pf['time_point']]
-                    pf['time_s'] = time
                 except AttributeError:
-                    pass
+                    time = [float(t) for t in pf['time_point']]
+                pf['time_s'] = time
                 pf['chamber'] = [f'{self.fov_name}_{chamber}'] * len(pf)
                 pf_list.append(pf)
         try:  # if have no mother
@@ -916,7 +924,7 @@ if __name__ == '__main__':
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
     # DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
     DIR = r"./test_data_set/test_data"
-    fovs_name = get_fovs_name(DIR, all_fov=True)
+    fovs_name = get_fovs(DIR, all_fov=True)
     fovs_num = len(fovs_name)
 
     for fov in fovs_name:
@@ -1035,4 +1043,3 @@ if __name__ == '__main__':
     #     # ax1[9].yaxis.set_ticks(np.arange(0, 16, 1))  # set y-ticks
     #     ax1[9].yaxis.tick_left()  # remove right y-Ticks
     #     fig1.show()
-
