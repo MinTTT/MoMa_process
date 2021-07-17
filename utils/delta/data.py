@@ -5,14 +5,22 @@ operations.
 @author: jblugagne
 '''
 from __future__ import print_function
+
+import copy
+import glob
+import importlib
+import os
+import random
+import re
+import warnings
+
 import numpy as np
-import os, glob, re, random, warnings, copy, importlib
 import skimage.io as io
-import tifffile as tiflib
 import skimage.transform as trans
-from skimage.measure import label
-from skimage.morphology import square, binary_opening, medial_axis, remove_small_objects
+import tifffile as tiflib
 from scipy import interpolate
+from skimage.measure import label
+from skimage.morphology import square, binary_opening, remove_small_objects
 
 # Try to import elastic deformations, issue warning if not found:
 if importlib.util.find_spec("elasticdeform") is None:

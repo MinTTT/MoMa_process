@@ -10,6 +10,8 @@ import cv2, os, re
 import numpy as np
 from joblib import Parallel, delayed
 from typing import Union
+
+
 def deskew(image):
     '''
     Compute rotation angle of chambers in image for rotation correction.
@@ -172,7 +174,6 @@ def driftcorr(img: np.ndarray, template=None, box=None, drift=None, parallel=Tru
                         [0, 1, -xcorr[inx]]])  # xcorr: direction for shiftting along y axis
         img[inx] = cv2.warpAffine(img[inx], T, img.shape[3:0:-1])
 
-
     if parallel:
         _ = Parallel(n_jobs=32, require='sharedmem')(delayed(parallel_drift)(i) for i in range(img.shape[0]))
     else:
@@ -182,8 +183,8 @@ def driftcorr(img: np.ndarray, template=None, box=None, drift=None, parallel=Tru
                 driftcorrimg = cropbox(frame, box)  # crop part of image for matching
                 res = cv2.matchTemplate(driftcorrimg, template, cv2.TM_CCOEFF_NORMED)
                 _, _, _, max_loc = cv2.minMaxLoc(res)  # top left corner
-                ycorr[i] = max_loc[0] - res.shape[1] / 2  #　TODO: why size should over 2 ?
-                xcorr[i] = max_loc[1] - res.shape[0] / 2  #　TODO: why size should over 2 ?
+                ycorr[i] = max_loc[0] - res.shape[1] / 2  # TODO: why size should over 2 ?
+                xcorr[i] = max_loc[1] - res.shape[0] / 2  # TODO: why size should over 2 ?
             T = np.float32([[1, 0, -ycorr[i]],
                             [0, 1, -xcorr[i]]])  # xcorr: direction for shiftting along y axis
             img[i] = cv2.warpAffine(img[i], T, img.shape[3:0:-1])
@@ -216,13 +217,22 @@ def getChamberBoxes(chambersmask):
     else:
         chambersmask = cv2.threshold(chambersmask, .5, 1, cv2.THRESH_BINARY)[1].astype(np.uint8)
     contours = cv2.findContours(chambersmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    y_length, _ = chambersmask.shape
     for chamber in contours:
         xtl, ytl, boxwidth, boxheight = cv2.boundingRect(chamber)
-        chamberboxes.append(dict(
+        chamber_dict = dict(
             xtl=xtl,
             ytl=int(ytl - (boxheight * .08)),  # -10% of height to make sure the top isn't cropped
             xbr=xtl + boxwidth,
-            ybr=int(ytl + boxheight * 1.1)))  # tl = top left, br = bottom right. MODIFY: add more 10% of height
+            ybr=int(ytl + boxheight * 1.1))
+
+        if chamber_dict['ytl'] < 0:
+            chamber_dict['ytl'] = 0
+        if chamber_dict['ybr'] > y_length:
+            chamber_dict['ybr'] = y_length
+
+        chamberboxes.append(chamber_dict)  # tl = top left, br = bottom right. MODIFY: add more 10% of height
+
     chamberboxes.sort(key=lambda elem: elem['xtl'])  # Sorting by top-left X (normally sorted by Y top left)
     return chamberboxes
 
@@ -249,13 +259,14 @@ def getDriftTemplate(chamberboxes, img) -> Union[np.ndarray, None]:
 
     if len(chamberboxes) == 0:
         return None
-    (y_cut, x_cut) = [round(i * .025) for i in img.shape]  # Cutting out 2.5% (2.5% origin) of the image on each side as drift margin
+    (y_cut, x_cut) = [round(i * .025) for i in
+                      img.shape]  # Cutting out 2.5% (2.5% origin) of the image on each side as drift margin
     box = dict(
         xtl=x_cut,
         xbr=-x_cut,
         ytl=y_cut,
-        ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'] - y_cut)
-        # ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'] + y_cut)
+        ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'])
+    # ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'] + y_cut)
     return cropbox(img, box)
 
 

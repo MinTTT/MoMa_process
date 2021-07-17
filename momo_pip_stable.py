@@ -41,11 +41,12 @@ def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
 
 # %%
 if __name__ == '__main__':
-    THREADING = False
+#%%
+    THREADING = True
     THREADING_Limit = 2
     print('[Momo] -> Loading Files')
-    DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
-    fovs_name = mp.get_fovs(DIR)
+    DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
+    fovs_name = mp.get_fovs(DIR, time_step=120)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
     threading_working = [False] * fovs_num
@@ -74,7 +75,7 @@ if __name__ == '__main__':
 
         del to_process
 
-    all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv' and file.split('_')[0] == 'fov')]
+    all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv')]
     all_scv = [dask.delayed(paral_read_csv)(ps) for ps in all_scv_name]
     with ProgressBar():
         al_df = dask.compute(*all_scv, scheduler='threads')

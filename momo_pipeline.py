@@ -52,7 +52,7 @@ if gpus:
     try:
         tf.config.experimental.set_virtual_device_configuration(
             gpus[0],
-            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2 * 2048)])
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=3 * 2048)])
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
     except RuntimeError as e:
@@ -61,7 +61,7 @@ if gpus:
 
 model_file = r'./test_data_set/model/chambers_id_tessiechamp_old.hdf5'
 seg_model_file = r'./test_data_set/model/unet_moma_seg_multisets.hdf5'
-min_chamber_area = 3000
+min_chamber_area = 1500
 target_size = (512, 512)
 input_size = target_size + (1,)
 process_size = 200
@@ -79,7 +79,7 @@ plf = platform.system()
 
 
 def move_img_subfold(base_dir, fold_name='phase'):
-    cmd = f"mkdir ./{fold_name}"
+    cmd = f"mkdir {os.path.join(base_dir, fold_name)}"
     file_surfix = ['tiff', 'tif']
     if plf == 'Linux':
         OSTAG = True
@@ -88,8 +88,8 @@ def move_img_subfold(base_dir, fold_name='phase'):
     sbp.run(cmd, shell=OSTAG)
     with os.scandir(base_dir) as file_it:
         files = [file.name for file in file_it if file.is_file()]
-    files = [file for file in files if file.split('.')[-1] in file_surfix]
-    cmd2 = f"mv -t {fold_name} {' '.join(files)}"
+    files = [os.path.join(base_dir, file) for file in files if file.split('.')[-1] in file_surfix]
+    cmd2 = f"mv -t {os.path.join(base_dir, fold_name)} {' '.join(files)}"
     sbp.run(cmd2, shell=OSTAG)
     return None
 
@@ -466,7 +466,7 @@ class MomoFov:
         self.channels = get_channel_name(self.dir, self.fov_name)  # type: List[str] # channel names in list
         if len(self.channels) == 0:
             self.channels = [cell_detection]
-            move_img_subfold(self.dir, fold_name='phase')
+            move_img_subfold(os.path.join(self.dir, self.fov_name), fold_name='phase')
         quantify = [ch for ch in quantify if ch in self.channels]
         self.channels_function = {"cell_detection": cell_detection, "quantify": quantify}
         self.times = None
@@ -504,7 +504,7 @@ class MomoFov:
         for ch in self.channels:
             self.__dict__[self.ims_channels_dict[ch]] = dict()  # type: Dict[str, Dict[str, np.ndarray]]
 
-    def detect_channels(self, index=0):
+    def detect_channels(self, index=1):
         """
         The frame index used to detect side_channels. default is 0
         images inputted and rotated than vertical flip if needed, than detect the fame shift
@@ -519,14 +519,21 @@ class MomoFov:
         im = rangescale(im.squeeze(), rescale=(0, 1.))
         self.template_frame = im
         # TODO: if the images are not 2048 x 2048.
-
-        firstframe = np.expand_dims(np.expand_dims(cv2.resize(im.squeeze(), (512, 512)), axis=0), axis=3)
+        back_ground = np.ones((2048, 2048)) * np.median(im)
+        y_bl, x_bl = tuple([round((2048 - length)/2) for length in im.shape])
+        back_ground[y_bl:(y_bl+im.shape[0]), x_bl:(x_bl+im.shape[1])] = im.copy()
+        first_frame = np.expand_dims(np.expand_dims(cv2.resize(back_ground.squeeze(), (512, 512)), axis=0), axis=3)
         # using expand_dims to get it into a shape that the chambers id unet accepts
         # Find chambers, filter results, get bounding boxes:
-        chambermask = model_chambers.predict(firstframe, verbose=0)
-        chambermask = cv2.resize(np.squeeze(chambermask), im.shape[-1::-1])  # scaling back to original size
-        chambermask = postprocess(chambermask, min_size=min_chamber_area)  # Binarization, cleaning and area filtering
-        self.chamber_boxes = getChamberBoxes(np.squeeze(chambermask))
+        chamber_mask = model_chambers.predict(first_frame, verbose=0)
+        chamber_mask = cv2.resize(np.squeeze(chamber_mask), back_ground.shape)
+        chamber_mask = chamber_mask[y_bl:(y_bl + im.shape[0]), x_bl:(x_bl + im.shape[1])]
+        # scaling back to original size
+        chamber_mask = rangescale(chamber_mask, (0, 255)).astype(np.uint8)
+        chamber_mask, _ = cv_otsu(chamber_mask, gaussian_core=(9, 9))
+        chamber_mask = postprocess(chamber_mask, min_size=min_chamber_area, square_size=5)  # Binarization, cleaning
+        # and area filtering
+        self.chamber_boxes = getChamberBoxes(np.squeeze(chamber_mask))
 
         print(f"[{self.fov_name}] -> detect {len(self.chamber_boxes)} chambers.")
         border = int(im.shape[0] * 0.02)
@@ -535,17 +542,24 @@ class MomoFov:
                                ytl=min(self.chamber_boxes, key=lambda elem: elem['ytl'])['ytl'] - border,
                                ybr=max(self.chamber_boxes, key=lambda elem: elem['ybr'])['ybr'] + border
                                )  # get the borders of all channels.
-        v_m = vertical_mean(cropbox(self.template_frame, chambers_border))
 
+        # make sure the border do not extend the image frame
+        chambermask_ylength, _ = chamber_mask.shape
+        if chambers_border['ytl'] < 0:
+            chambers_border['ytl'] = 0
+        if chambers_border['ybr'] > chambermask_ylength:
+            chambers_border['ybr'] = chambermask_ylength
+
+        v_m = vertical_mean(cropbox(self.template_frame, chambers_border))
         # image vertical flip if chamber outlet in the top of the frame.
         if np.mean(v_m[0:(len(v_m) // 2)]) >= np.mean(v_m[(len(v_m) // 2):]):
             self.chamber_direction = 0
-            self.chamber_mask = chambermask[::-1, :]
+            self.chamber_mask = chamber_mask[::-1, :]
             self.chamber_boxes = getChamberBoxes(self.chamber_mask)
             self.drift_template = getDriftTemplate(self.chamber_boxes, im.squeeze()[::-1, :])
         else:
             self.chamber_direction = 1
-            self.chamber_mask = chambermask
+            self.chamber_mask = chamber_mask
             self.drift_template = getDriftTemplate(self.chamber_boxes, im.squeeze())
 
         return None
@@ -626,7 +640,7 @@ class MomoFov:
             box['ybr'] -= ycorr_one
         # -------------detect whether chambers were loaded with cells--------
         num_time = len(self.times[channel_detect_cell])
-        sample_index = np.random.choice(range(num_time), 10)
+        sample_index = np.random.choice(range(int(num_time * 0.1)), 10)
         selected_ims = self.phase_ims[sample_index, ...]
 
         chamber_graylevel = []
@@ -645,7 +659,8 @@ class MomoFov:
                                                     box['xtl']:box['xbr']], axis=0))
                 chamber_frq.append([sg, frq])
 
-        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.6
+        # cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.8
+        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.4
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamber_boxes[index] for index in self.index_of_loaded_chamber]
@@ -926,8 +941,10 @@ if __name__ == '__main__':
     # %%
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
     # DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
-    DIR = r"./test_data_set/test_data"
-    fovs_name = get_fovs_name(DIR, all_fov=True)
+    DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
+    # DIR = r"./test_data_set/test_data"
+
+    fovs_name = get_fovs(DIR, time_step=120)
     fovs_num = len(fovs_name)
 
     for fov in fovs_name:
@@ -1047,3 +1064,12 @@ if __name__ == '__main__':
     #     ax1[9].yaxis.tick_left()  # remove right y-Ticks
     #     fig1.show()
 
+    # DIR = r"/media/fulab/TOSHIBA_EXT/MZX"
+    # fov_dir = os.listdir(DIR)
+    # for fov in fov_dir:
+    #     if 'phase' in os.listdir(os.path.join(DIR, fov)):
+    #         cmd = f"rm {os.path.join(DIR, fov, 'phase')}"
+    #
+    fig, ax = plt.subplots(1, 1)
+    ax.imshow(fov.chamber_mask)
+    fig.show()

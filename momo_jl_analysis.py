@@ -150,9 +150,9 @@ def rangescale(frame, rescale, threshold=None) -> np.ndarray:
 
 
 # %%
-DIR = r'./test_data_set/test_data'
+DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
 jl_file = find_jl(DIR)
-fov_jl = load(jl_file[0])
+fov_jl = load(jl_file[1])
 
 # %%
 from utils.signal import vertical_mean
