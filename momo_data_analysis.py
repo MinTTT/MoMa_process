@@ -59,7 +59,7 @@ def log_fitting(length, time):
     return [gr_length, time_length, inst_rate, inst_time]
 
 
-def cell_div_filter(cell_area_t):
+def cell_div_filter(cell_area_t, threshold=10):
     cell_area = cell_area_t[:, 0].ravel()
     time_h = cell_area_t[:, 1].ravel()
     area_dd = np.diff(np.diff(cell_area))
@@ -71,6 +71,10 @@ def cell_div_filter(cell_area_t):
     mask[outlier] = False
     fild_cell_area = cell_area[mask]
     fild_time_h = time_h[mask]
+    if threshold is not None:
+        size_mask = fild_cell_area > threshold
+        fild_cell_area = fild_cell_area[size_mask]
+        fild_time_h = fild_time_h[size_mask]
     area_dd = np.diff(np.diff(fild_cell_area))
     outlier2 = np.where(1.2 * fild_cell_area[1:-1] < area_dd)[0] + 1
     mask = np.array([True] * len(fild_cell_area))
@@ -108,9 +112,11 @@ def get_growth_rate(cell_df, **kwargs):
 
     cell_df = cell_df[[st, 'time_h']]
 
-    cell_data = cell_df[cell_df[st] > 15].values  # if compute ref cell length, cell length < 15 are except.
+    cell_data = cell_df[cell_df[st] > 10].values  # if compute ref cell length, cell length < 15 are except.
+    if len(cell_data[:, 1]) == 0:
+        return None
 
-    if cell_data[:, 1].max() < 75:  # time must great than 75 hrs
+    if cell_data[:, 1].max() < 60:  # time must great than 75 hrs
         return None
 
     div_slice, fild_cells_area, fild_time = cell_div_filter(cell_data)
@@ -197,7 +203,7 @@ def draw_binned_growth_rate(data_dict: dict, bin_num, ax=None, **kwargs):
         data = data_dict[na]
         if isinstance(data, np.ndarray):
             ax.plot(data[:, 0], data[:, 1], color='#ABB2B9', lw=0.5, alpha=0.4)
-    ax.plot(data[:, 0], data[:, 1], color='#E67E22', lw=1.2, alpha=0.5)
+    ax.plot(data[:, 0], data[:, 1], color='#E67E22', lw=3, alpha=0.5)
     ax.scatter(time_avg, gr_avg, s=40, color='#3498DB')
     ax.plot(time_avg, std_up, '--', lw=3, color='#5DADE2')
     ax.plot(time_avg, std_down, '--', lw=3, color='#5DADE2')
@@ -208,24 +214,27 @@ def draw_binned_growth_rate(data_dict: dict, bin_num, ax=None, **kwargs):
 
 
 # %% load statistic data
-ps = r'./test_data_set/csv_data/mothers_raw_dic.jl'
+ps = r'E:\Moma_statistic\20210101_NCM_pECJ3_M5_L3_mothers_raw_dic.jl'
 # cells_df = cells_df.compute()
 cells_df = load(ps)
 cells_name = list(cells_df.keys())
 
 # %%
-cell_df = cells_df[cells_name[688]]
-length = cell_df['length']
+cell_df = cells_df[cells_name[20]]
+length = cell_df['length'] * 0.066
 time_h = cell_df['time_h']
 
 slices, fild_leng, fild_t = cell_div_filter(cell_df[['length', 'time_h']].values)
+
 fig, ax = plt.subplots(1, 1)
 ax.scatter(time_h, length, marker='d', c='#FFA2A8')
-ax.plot(time_h, length)
+ax.plot(time_h, length, c='#808B96')
 for sl in slices:
-    ax.scatter(fild_t[sl], fild_leng[sl])
+    ax.scatter(fild_t[sl], fild_leng[sl]*0.066)
 ax.set_yscale('log')
-ax.set_ylim(10, 250)
+ax.set_ylim(0.9, 8)
+ax.set_xlim(0, 20)
+ax.grid(False)
 fig.show()
 
 # %% filter data
@@ -264,7 +273,7 @@ from sklearn.cluster import KMeans
 
 km_model = KMeans(n_clusters=3, random_state=4).fit(four_binned)
 km_label = km_model.labels_
-colors_4 = ['#DBB38F', '#91DB8F', '#8FB7DB', '#D98FDB']  # brown, green, blue, violet
+colors_4 = ['#DBB38F', '#91DB8F', '#8FB7DB', '#D98FDB'] # brown, green, blue, violet
 fig2, ax2 = plt.subplots(1, 1)
 for label in range(4):
     color = colors_4[label]
@@ -287,9 +296,19 @@ for i, ax in enumerate(axes):
     ax.set_yticks(np.arange(-0.2, 2.2, 0.2))
 fig3.show()
 
+fig3, axes = plt.subplots(3, 1, figsize=(15, 25))
+for i, ax in enumerate(axes):
+    clfd_growth_dict = {cn: cells_len_growth_rate[cn] for cn in clfd_cells[i]}
+    draw_binned_growth_rate(clfd_growth_dict, bin_num=200, bac_cells_num=30, ax=ax)
+    ax.set_yticks(np.arange(-0.1, 2.2, 0.2))
+    ax.set_ylim(-0.25, 2.2)
+    ax.grid(False)
+fig3.show()
+
+
 # %%
-fluor_binnum = 100
-clfd_cell = clfd_cells[0]
+fluor_binnum = 50
+clfd_cell = clfd_cells[1]
 cells_green = []
 cells_red = []
 cells_time = []
@@ -312,9 +331,10 @@ bgreen_mean = mean_flu[:, -1]
 # _, bred_mean, bred_std = binned_average(cells_time, cells_red, num=fluor_binnum)
 
 fig4, ax = plt.subplots(1, 1)
-sld_cells = np.random.choice(clfd_cell, 30)
+sld_cells = np.random.choice(clfd_cell, 1)
 for cell in tqdm(sld_cells):
     cell_data = cells_df[cell]
+
     mask_df = cells_df[cell][~np.isnan(cells_df[cell]['green_medium'])]
     ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#ABB2B9', lw=0.5, alpha=0.5)
 # ax.plot(mask_df['red_medium'], mask_df['green_medium'], color='#E67E22', lw=2, alpha=0.6)
@@ -353,7 +373,7 @@ def flu_binned(index, cn):
 _ = Parallel(n_jobs=32, backend='threading')(delayed(flu_binned)(index, cn) for index, cn in enumerate(tqdm(clfd_cell)))
 
 fig5, ax5 = plt.subplots(1, 1)
-# ax8.scatter(binned_red[:, -1], binned_green[:, -1])
+
 sns.histplot(x=binned_red[:, -1], y=binned_green[:, -1], ax=ax5)
 fig5.show()
 
@@ -375,7 +395,7 @@ sub_log_bin_flu = log_bin_flu[mask_otler, :]
 
 # %%
 print('Modeling Fitting.')
-km_model2 = KMeans(2, random_state=3).fit(sub_log_bin_flu[:, -3:-1])
+km_model2 = KMeans(2, random_state=3).fit(sub_log_bin_flu[:, -4:-2])
 km_label2 = km_model2.labels_
 
 fig7, ax = plt.subplots(1, 1)
@@ -446,6 +466,14 @@ for i, ax10 in enumerate(axes9):
     ax10.set_ylabel('Fluorescent intensity (a.u.)')
     ax10.set_ylim(-10, 2000)
 fig10.show()
+export_data = sub_clf_bin_mean_data[0]
+export_flu = pd.DataFrame(data=dict(Time=binned_avg[:, 0],
+                                    Green=binned_avg[:, 1],
+                                    Red=binned_avg[:, 2],
+                                    Green_std=binned_std[:, 1],
+                                    Red_std=binned_std[:, 2]))
+export_flu.to_csv(r'./exported_data/single_cell_mean_green_red.csv')
+
 
 classify_data = binned_average(sub_clf_data[0], classify_only=True)
 
