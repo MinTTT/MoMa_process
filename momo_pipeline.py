@@ -811,7 +811,7 @@ class MomoFov:
                         cell.assign_channel_imgs(channel_imgs)
                     # cell_mask_ori = cell_mask.copy()
                     iter_key = [True] * cells_number
-                    for i in range(5):
+                    for i in range(3):
                         for index, cell in enumerate(cells_list):
                             if iter_key[index]:
                                 cell_mask_od = cell.mask.copy()
@@ -819,11 +819,11 @@ class MomoFov:
                                 cell_mask_edge, mask_edge_xy = cv_edge_fullmask2contour(cell_mask, thickness=2)
                                 # cell_mask_edge_2, mask_edge_xy_2 = cv_edge_fullmask2contour(cell_mask)
                                 cell_mask_edge = line_length_filter(cell_mask_edge, 6, 0)
-                                cell_mask_out, mask_out_xy = cv_out_edge_contour(cell.mask, axis=0)
+                                cell_mask_out, mask_out_xy = cv_out_edge_contour(cell_mask, axis=0)
                                 cell_mask_xaxis = np.logical_and(cell_mask_out, np.logical_not(cell_mask_edge))
-                                edge_ceiling_threshold = np.quantile(invert_phase[cell.mask != 0], 0.45)
+                                edge_ceiling_threshold = np.quantile(invert_phase[cell_mask != 0], 0.5)
                                 masked_phase = invert_phase.copy()
-                                masked_phase[cell.mask_opt == 0] = 0
+                                masked_phase[cell_mask == 0] = 0
                                 _, edge_floor_threshold = cv_otsu(masked_phase)
                                 edge_floor_threshold /= 255
                                 edge_revise_mask = np.logical_and((invert_phase < edge_floor_threshold), cell_mask_edge)
@@ -837,13 +837,14 @@ class MomoFov:
                                 other_cells_mask = np.logical_not(np.sum(other_cells_mask, axis=0))
                                 cell_mask = np.logical_and(cell_mask, other_cells_mask)
                                 cell_mask = np.logical_and(cell_mask, chamber_mask).astype(np.uint8)
-                                if cell_mask.all():
+                                if cell_mask.any():
                                     cell.mask_opt = cell_mask * 255
                                     check_array = cell.mask_opt == cell_mask_od
                                     if check_array.all():
                                         iter_key[index] = False
                                 else:
                                     iter_key[index] = False
+                        # print(i, iter_key)
                         if True not in iter_key:
                             break
                     for cell in cells_list:

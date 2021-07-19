@@ -24,7 +24,7 @@ from typing import Union
 # import dask
 # from dask.distributed import Client
 # client = Client(n_workers=16, threads_per_worker=32)
-
+from momo_pipeline import Cell
 
 GREEN_COLOR = (0, 255, 0)  # RGB
 RED_COLOR = (255, 0, 0)  # RGB
@@ -32,7 +32,7 @@ RED_COLOR = (255, 0, 0)  # RGB
 
 def draw_contour(ch=None, ch_name=None,
                  channel='phase', time: Union[int, list] = 0, fov_jl=None,
-                 contours=True, color=None, threshold=None, conat=True):
+                 contours=True, color=None, threshold=None, conat=True, ax=None):
     """
     draw contours in chamber for checking the images' segmentation.
     :param conat: default True, if False, return a list of chambers
@@ -66,6 +66,23 @@ def draw_contour(ch=None, ch_name=None,
     if not isinstance(time_keys, list):
         time_keys = [time_keys]
     channel_im = np.array([fov_jl[channl_color][ch_na][key] for key in time_keys])
+    frame_num, chamber_length, chamber_width = channel_im.shape
+    drift_alongx = np.arange(frame_num) * chamber_width
+    cells_selected = [fov_jl['cells_obj'][ch_na][key] for key in time_keys]
+    chamber_spine = []
+    chamber_skeleton = []
+    for chamber_index, chamber in enumerate(cells_selected):
+        cells_sket = []
+        cells_spine = []
+        for cell in chamber:
+            ket = cell.skeleton.copy()
+            ket[:, 1] = ket[:, 1] + drift_alongx[chamber_index]
+            spine = cell.spine.copy()
+            spine[:, 1] = spine[:, 1] + drift_alongx[chamber_index]
+            cells_sket.append(ket)
+            cells_spine.append(spine)
+        chamber_spine.append(cells_spine)
+        chamber_skeleton.append(cells_sket)
 
     if channel == 'phase':
         cell_cuntour = fov_jl['chamber_cells_contour'][ch_na][time]
@@ -94,6 +111,18 @@ def draw_contour(ch=None, ch_name=None,
             ims_with_cnt.append(bgr_im)
     if conat:
         ims_with_cnt = np.concatenate(ims_with_cnt, axis=1)
+
+    if ax is None:
+        ax = plt.gca()
+
+    ax.imshow(ims_with_cnt, origin='lower')
+
+    for time_index in range(len(time_keys)):
+        for cell_index in range(len(cells_selected[time_index])):
+            sket = chamber_skeleton[time_index][cell_index]
+            spine = chamber_spine[time_index][cell_index]
+            ax.scatter(sket[:, 1], sket[:, 0])
+            ax.plot(spine[:, 1], spine[:, 0])
     return ims_with_cnt
 
 
@@ -155,16 +184,15 @@ def rangescale(frame, rescale, threshold=None) -> np.ndarray:
 # DIR = 'D:/python_code/MoMa_process/test_data_set/jl_data'
 DIR = r'D:\python_code\MoMa_process\test_data_set\test_data'
 jl_file = find_jl(DIR)
-fov_jl = load(jl_file[0])
+fov_jl = load(jl_file[-1])
 
 #%%
-ch = 4
-time = [1, 10]
-
-ims_with_cnt = draw_contour(ch=ch, channel='phase', time=time, fov_jl=fov_jl)
+ch = 13
+time = [0, -1]
 
 fig1, ax = plt.subplots(1, 1)
-ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
+# ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
+_ = draw_contour(ch=ch, channel='phase', time=time, fov_jl=fov_jl)
 ax.grid(False)
 fig1.show()
 
