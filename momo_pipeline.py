@@ -236,12 +236,12 @@ def get_fovs(dir, all_fov=False, sort=True, **kwargs):
     if all_fov == False:
         untreated = list(set(fov_folder) - set(jl_file))
         if sort == True:
-            untreated.sort(key=lambda name: int(name[3:]))
+            untreated.sort(key=lambda name: int(name[3:].strip("_")))
         fovs_name = [MomoFov(folder, DIR, **kwargs) for folder in untreated]
         return fovs_name
     else:
         if sort == True:
-            fov_folder.sort(key=lambda name: int(name[3:]))
+            fov_folder.sort(key=lambda name: int(name[3:].strip("_")))
         fovs_name = [MomoFov(folder, DIR, **kwargs) for folder in fov_folder]
         return fovs_name
 
@@ -504,7 +504,7 @@ class MomoFov:
         for ch in self.channels:
             self.__dict__[self.ims_channels_dict[ch]] = dict()  # type: Dict[str, Dict[str, np.ndarray]]
 
-    def detect_channels(self, index=1):
+    def detect_channels(self, index=0):
         """
         The frame index used to detect side_channels. default is 0
         images inputted and rotated than vertical flip if needed, than detect the fame shift
@@ -523,15 +523,18 @@ class MomoFov:
         y_bl, x_bl = tuple([round((2048 - length) / 2) for length in im.shape])
         back_ground[y_bl:(y_bl + im.shape[0]), x_bl:(x_bl + im.shape[1])] = im.copy()
         first_frame = np.expand_dims(np.expand_dims(cv2.resize(back_ground.squeeze(), (512, 512)), axis=0), axis=3)
+        # fig, ax = plt.subplots(1, 1)
+        # ax.imshow(first_frame.squeeze())
+        # fig.show()
         # using expand_dims to get it into a shape that the chambers id unet accepts
         # Find chambers, filter results, get bounding boxes:
         chamber_mask = model_chambers.predict(first_frame, verbose=0)
         chamber_mask = cv2.resize(np.squeeze(chamber_mask), back_ground.shape)
         chamber_mask = chamber_mask[y_bl:(y_bl + im.shape[0]), x_bl:(x_bl + im.shape[1])]
         # scaling back to original size
-        chamber_mask = rangescale(chamber_mask, (0, 255)).astype(np.uint8)
-        chamber_mask, _ = cv_otsu(chamber_mask, gaussian_core=(9, 9))
-        chamber_mask = postprocess(chamber_mask, min_size=min_chamber_area, square_size=5)  # Binarization, cleaning
+        # chamber_mask = rangescale(chamber_mask, (0, 255)).astype(np.uint8)
+        # chamber_mask, _ = cv_otsu(chamber_mask, gaussian_core=(9, 9))
+        chamber_mask = postprocess(chamber_mask, min_size=min_chamber_area)  # Binarization, cleaning
         # and area filtering
         self.chamber_boxes = getChamberBoxes(np.squeeze(chamber_mask))
 
@@ -941,16 +944,16 @@ if __name__ == '__main__':
     # %%
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
     # DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
-    DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
-    # DIR = r"./test_data_set/test_data"
+    # DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
+    DIR = r"./test_data_set/test_data"
 
-    fovs_name = get_fovs(DIR, time_step=120)
+    fovs_name = get_fovs(DIR, time_step=120, all_fov=True)
     fovs_num = len(fovs_name)
 
     for fov in fovs_name:
         fov.process_flow_GPU()
         fov.process_flow_CPU()
-        del fov
+        # del fov
     # fov1 = fovs_name[0]
     #
     # fov1.detect_channels()
@@ -1070,6 +1073,8 @@ if __name__ == '__main__':
     #     if 'phase' in os.listdir(os.path.join(DIR, fov)):
     #         cmd = f"rm {os.path.join(DIR, fov, 'phase')}"
     #
-    # fig, ax = plt.subplots(1, 1)
-    # ax.imshow(fov.chamber_mask)
+    # fig, ax = plt.subplots(1, 2)
+    # ax[0].imshow(fov.chamber_mask)
+    # ax[1].imshow(fov.drift_template)
+    #
     # fig.show()

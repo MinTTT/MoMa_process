@@ -152,9 +152,21 @@ def rangescale(frame, rescale, threshold=None) -> np.ndarray:
 
 # %%
 # DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
-DIR = 'D:/python_code/MoMa_process/test_data_set/jl_data'
+# DIR = 'D:/python_code/MoMa_process/test_data_set/jl_data'
+DIR = r'D:\python_code\MoMa_process\test_data_set\test_data'
 jl_file = find_jl(DIR)
-fov_jl = load(jl_file[1])
+fov_jl = load(jl_file[0])
+
+#%%
+ch = 4
+time = [1, 10]
+
+ims_with_cnt = draw_contour(ch=ch, channel='phase', time=time, fov_jl=fov_jl)
+
+fig1, ax = plt.subplots(1, 1)
+ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
+ax.grid(False)
+fig1.show()
 
 # %%
 from utils.signal import vertical_mean
@@ -201,15 +213,7 @@ fig1.show()
 
 
 # %%
-ch = 3
-time = [0, -1]
 
-ims_with_cnt = draw_contour(ch=ch, channel='phase', time=time, fov_jl=fov_jl)
-
-fig1, ax = plt.subplots(1, 1)
-ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
-ax.grid(False)
-fig1.show()
 
 # %%  show specific fluorescent channels along time
 ch = 4
