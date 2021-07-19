@@ -265,7 +265,7 @@ def getDriftTemplate(chamberboxes, img) -> Union[np.ndarray, None]:
         xtl=x_cut,
         xbr=-x_cut,
         ytl=y_cut,
-        ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'])
+        ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'] - y_cut)
     # ybr=max(chamberboxes, key=lambda elem: elem['ytl'])['ytl'] + y_cut)
     return cropbox(img, box)
 
