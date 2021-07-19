@@ -520,8 +520,8 @@ class MomoFov:
         self.template_frame = im
         # TODO: if the images are not 2048 x 2048.
         back_ground = np.ones((2048, 2048)) * np.median(im)
-        y_bl, x_bl = tuple([round((2048 - length)/2) for length in im.shape])
-        back_ground[y_bl:(y_bl+im.shape[0]), x_bl:(x_bl+im.shape[1])] = im.copy()
+        y_bl, x_bl = tuple([round((2048 - length) / 2) for length in im.shape])
+        back_ground[y_bl:(y_bl + im.shape[0]), x_bl:(x_bl + im.shape[1])] = im.copy()
         first_frame = np.expand_dims(np.expand_dims(cv2.resize(back_ground.squeeze(), (512, 512)), axis=0), axis=3)
         # using expand_dims to get it into a shape that the chambers id unet accepts
         # Find chambers, filter results, get bounding boxes:
@@ -606,8 +606,6 @@ class MomoFov:
             times = np.arange(len(self.time_points[channel_detect_cell].values())) * self.time_step
             for index, time_key in enumerate(self.time_points[channel_detect_cell].keys()):
                 self.time_points[channel_detect_cell][time_key] = times[index]
-
-
 
         # if plf != 'Linux':
         #     _ = Parallel(n_jobs=64, require='sharedmem')(
@@ -900,6 +898,7 @@ class MomoFov:
                          times=self.times,
                          time_points=self.time_points,
                          light_channels=self.channels,
+                         channels_im_dic_name=self.ims_channels_dict,
                          chamber_box=self.chamber_boxes,
                          chamber_loaded_name=self.loaded_chamber_name,
                          chamber_loaded_index=self.index_of_loaded_chamber,
@@ -912,7 +911,8 @@ class MomoFov:
                          cells_obj=self.cells
                          )
         for ch in self.channels:
-            save_data.update(self.__dict__[self.ims_channels_dict[ch]])
+            save_data.update({self.ims_channels_dict[ch]:
+                                  self.__dict__[self.ims_channels_dict[ch]]})
 
         if compress:
             dump(save_data, os.path.join(self.dir, self.fov_name + '.jl'), compress='lz4')
@@ -1070,6 +1070,6 @@ if __name__ == '__main__':
     #     if 'phase' in os.listdir(os.path.join(DIR, fov)):
     #         cmd = f"rm {os.path.join(DIR, fov, 'phase')}"
     #
-    fig, ax = plt.subplots(1, 1)
-    ax.imshow(fov.chamber_mask)
-    fig.show()
+    # fig, ax = plt.subplots(1, 1)
+    # ax.imshow(fov.chamber_mask)
+    # fig.show()

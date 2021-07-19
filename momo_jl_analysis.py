@@ -20,7 +20,7 @@ import cv2
 from matplotlib import pylab
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
+from typing import Union
 # import dask
 # from dask.distributed import Client
 # client = Client(n_workers=16, threads_per_worker=32)
@@ -31,7 +31,7 @@ RED_COLOR = (255, 0, 0)  # RGB
 
 
 def draw_contour(ch=None, ch_name=None,
-                 channel='phase', time=0, fov_jl=None,
+                 channel='phase', time: Union[int, list] = 0, fov_jl=None,
                  contours=True, color=None, threshold=None, conat=True):
     """
     draw contours in chamber for checking the images' segmentation.
@@ -52,28 +52,29 @@ def draw_contour(ch=None, ch_name=None,
         ch_na = ch_name
     # print(ch_na)
 
-    channl_key = dict(phase='chamber_phase_images',
-                      green='chamber_green_images',
-                      red='chamber_red_images')
+    # channl_key = dict(phase='chamber_phase_images',
+    #                   green='chamber_green_images',
+    #                   red='chamber_red_images')
+    channl_key = fov_jl['channels_im_dic_name']
+
     channl_color = channl_key[channel]
 
     if not isinstance(time, int):
         time = slice(*time)
-        channel_im = fov_jl[channl_color][ch_na][time]
-    else:
-        channel_im = fov_jl[channl_color][ch_na][time]
-        channel_im = np.expand_dims(channel_im, axis=0)
+
+    time_keys = fov_jl['times'][channel][time]
+    if not isinstance(time_keys, list):
+        time_keys = [time_keys]
+    channel_im = np.array([fov_jl[channl_color][ch_na][key] for key in time_keys])
 
     if channel == 'phase':
         cell_cuntour = fov_jl['chamber_cells_contour'][ch_na][time]
     else:
-        time_str = fov_jl['times'][channel][time]
-        if isinstance(time_str, str):
-            time_index = fov_jl['times']['phase'].index(time_str)
+        if isinstance(time_keys, str):
+            time_index = fov_jl['times']['phase'].index(time_keys)
             cell_cuntour = [fov_jl['chamber_cells_contour'][ch_na][time_index]]
-
         else:
-            time_index = [fov_jl['times']['phase'].index(ele) for ele in time_str]
+            time_index = [fov_jl['times']['phase'].index(ele) for ele in time_keys]
             cell_cuntour = []
             for inx in time_index:
                 cell_cuntour.append(fov_jl['chamber_cells_contour'][ch_na][inx])
@@ -150,7 +151,8 @@ def rangescale(frame, rescale, threshold=None) -> np.ndarray:
 
 
 # %%
-DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
+# DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
+DIR = 'D:/python_code/MoMa_process/test_data_set/jl_data'
 jl_file = find_jl(DIR)
 fov_jl = load(jl_file[1])
 
@@ -194,12 +196,11 @@ for name in chamber_names:
     ax.plot(frq, np.log(abs(sg)))
 # ax.plot(freq[mask], abs(sg[mask]))
 fig1.show()
-#%%
+# %%
 # lineage linking
 
 
-
-#%%
+# %%
 ch = 3
 time = [0, -1]
 
