@@ -947,7 +947,7 @@ if __name__ == '__main__':
     # DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
     DIR = r"./test_data_set/test_data"
 
-    fovs_name = get_fovs(DIR, time_step=120, all_fov=True)
+    fovs_name = get_fovs(DIR, time_step=120, all_fov=False)
     fovs_num = len(fovs_name)
 
     for fov in fovs_name:

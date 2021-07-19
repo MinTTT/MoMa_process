@@ -259,7 +259,7 @@ def getDriftTemplate(chamberboxes, img) -> Union[np.ndarray, None]:
 
     if len(chamberboxes) == 0:
         return None
-    (y_cut, x_cut) = [round(i * .025) for i in
+    (y_cut, x_cut) = [round(i * .01) for i in
                       img.shape]  # Cutting out 2.5% (2.5% origin) of the image on each side as drift margin
     box = dict(
         xtl=x_cut,
