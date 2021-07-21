@@ -45,7 +45,8 @@ if __name__ == '__main__':
     THREADING = True
     THREADING_Limit = 2
     print('[Momo] -> Loading Files')
-    DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
+    # DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
+    DIR = r"/home/fulab/data/MZX"
     fovs_name = mp.get_fovs(DIR, time_step=120)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
@@ -53,12 +54,13 @@ if __name__ == '__main__':
     init = 0
     if THREADING:
         while fovs_name:
-            while np.sum(threading_working) > THREADING_Limit:
+            while np.sum(threading_working) >= THREADING_Limit:
                 time.sleep(5)
             to_process = fovs_name.pop(0)
             print(f'Processing {init + 1}/{fovs_num}')
             to_process.process_flow_GPU()
             thread.start_new_thread(thread_dump, (to_process, init))
+            time.sleep(1)
             init += 1
 
         del to_process
