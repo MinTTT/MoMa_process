@@ -51,6 +51,7 @@ if __name__ == '__main__':
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
     threading_working = [False] * fovs_num
+    to_process = None
     init = 0
     if THREADING:
         while fovs_name:
