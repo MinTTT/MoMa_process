@@ -121,7 +121,7 @@ def draw_contour(ch=None, ch_name=None,
         for cell_index in range(len(cells_selected[time_index])):
             sket = chamber_skeleton[time_index][cell_index]
             spine = chamber_spine[time_index][cell_index]
-            ax.scatter(sket[:, 1], sket[:, 0])
+            ax.scatter(sket[:, 1], sket[:, 0], s=2)
             ax.plot(spine[:, 1], spine[:, 0])
     return ims_with_cnt
 
@@ -187,14 +187,15 @@ jl_file = find_jl(DIR)
 fov_jl = load(jl_file[-1])
 
 #%%
-ch = 13
+ch = 4
 time = [0, -1]
 
-fig1, ax = plt.subplots(1, 1)
+fig1, ax = plt.subplots(1, 1, figsize=(500, 8))
 # ax.imshow(rangescale(ims_with_cnt, (0, 255)).astype(np.uint8))
 _ = draw_contour(ch=ch, channel='phase', time=time, fov_jl=fov_jl)
 ax.grid(False)
-fig1.show()
+# fig1.show()
+fig1.savefig(r'C:\Users\pan_c\Desktop\Fig1.png')
 
 # %%
 from utils.signal import vertical_mean

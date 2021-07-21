@@ -214,7 +214,9 @@ def draw_binned_growth_rate(data_dict: dict, bin_num, ax=None, **kwargs):
 
 
 # %% load statistic data
-ps = r'E:\Moma_statistic\20210101_NCM_pECJ3_M5_L3_mothers_raw_dic.jl'
+# ps = r'E:\Moma_statistic\20210101_NCM_pECJ3_M5_L3_mothers_raw_dic.jl'
+ps = r'D:\python_code\MoMa_process\test_data_set\jl_data\mothers_raw_dic.jl'
+
 # cells_df = cells_df.compute()
 cells_df = load(ps)
 cells_name = list(cells_df.keys())

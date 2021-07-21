@@ -504,6 +504,9 @@ class MomoFov:
         for ch in self.channels:
             self.__dict__[self.ims_channels_dict[ch]] = dict()  # type: Dict[str, Dict[str, np.ndarray]]
 
+    def fmt_str(self, msg):
+        return f"[{self.fov_name}] -> {msg}"
+
     def detect_channels(self, index=0):
         """
         The frame index used to detect side_channels. default is 0
@@ -604,7 +607,8 @@ class MomoFov:
 
         # --------------------- input all phase images --------------------------------------
         _ = Parallel(n_jobs=64, require='sharedmem')(
-            delayed(parallel_input)(fn, i) for i, fn in enumerate(tqdm(self.times[channel_detect_cell])))
+            delayed(parallel_input)(fn, i)
+            for i, fn in enumerate(tqdm(self.times[channel_detect_cell], desc=self.fmt_str("loading phase images"))))
         if None in self.time_points[channel_detect_cell].values():
             times = np.arange(len(self.time_points[channel_detect_cell].values())) * self.time_step
             for index, time_key in enumerate(self.time_points[channel_detect_cell].keys()):
@@ -773,17 +777,20 @@ class MomoFov:
 
                     self.time_points[channel][time] = time_point
             return None
-
+        pb_msg = self.fmt_str("loading fluorescent images")
         if plf != 'Linux':
             _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
-                                                         for inx_t, time in enumerate(tqdm(self.times['phase'])))
+                                                         for inx_t, time in enumerate(tqdm(self.times['phase'],
+                                                                                           desc=pb_msg)))
         else:
             _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
-                                                         for inx_t, time in enumerate(tqdm(self.times['phase'])))
+                                                         for inx_t, time in enumerate(tqdm(self.times['phase'],
+                                                                                           desc=pb_msg)))
 
         self.cells = {chamber_name: {} for chamber_name in self.loaded_chamber_name}
         print(f'[{self.fov_name}] -> Optimize cell contour.')
-        for cha_name_inx, chamber_name in enumerate(tqdm(self.loaded_chamber_name)):
+        for cha_name_inx, chamber_name in enumerate(tqdm(self.loaded_chamber_name,
+                                                         desc=self.fmt_str("Optimize cell contour"))):
             detect_channel_key = self.channels_function["cell_detection"]
             detect_imgs_dict = self.__dict__[self.ims_channels_dict[detect_channel_key]]
             for tm_inx, time in enumerate(self.times[detect_channel_key]):

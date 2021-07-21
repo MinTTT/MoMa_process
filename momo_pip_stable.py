@@ -87,7 +87,7 @@ if __name__ == '__main__':
         cells_name = list(set(df['chamber']))
         for na in cells_name:
             cells_df = df[df['chamber'] == na]
-            cells_df = cells_df[cells_df['area'] > 100]
+            cells_df = cells_df[cells_df['area'] > 2]
             cells_df['time_h'] = [convert_time(s) for s in cells_df['time_s'] - cells_df['time_s'].min()]
             cells_dict.update({na: cells_df})
 
