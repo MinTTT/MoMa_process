@@ -928,7 +928,6 @@ class MomoFov:
         print(self.fmt_str('dumping mat file.'))
         savemat(os.path.join(self.dir, self.fov_name + '.mat'), dump_mat)
 
-
     def dump_data(self, compress=True):
         print(f"[{self.fov_name}] -> dump memory data.")
         if isinstance(self.dataframe_mother_cells, pd.DataFrame):
