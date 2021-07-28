@@ -222,20 +222,20 @@ cells_df = load(ps)
 cells_name = list(cells_df.keys())
 
 # %%
-cell_df = cells_df[cells_name[20]]
-length = cell_df['length'] * 0.066
+cell_df = cells_df[cells_name[10]]
+length = cell_df['spine_length']
 time_h = cell_df['time_h']
 
-slices, fild_leng, fild_t = cell_div_filter(cell_df[['length', 'time_h']].values)
+slices, fild_leng, fild_t = cell_div_filter(cell_df[['spine_length', 'time_h']].values, threshold=4)
 
 fig, ax = plt.subplots(1, 1)
 ax.scatter(time_h, length, marker='d', c='#FFA2A8')
-ax.plot(time_h, length, c='#808B96')
+ax.plot(time_h, length, c='#808B96', lw=2, )
 for sl in slices:
-    ax.scatter(fild_t[sl], fild_leng[sl]*0.066)
+    ax.scatter(fild_t[sl], fild_leng[sl])
 ax.set_yscale('log')
-ax.set_ylim(0.9, 8)
-ax.set_xlim(0, 20)
+# ax.set_ylim(0.9, 8)
+# ax.set_xlim(0, 20)
 ax.grid(False)
 fig.show()
 

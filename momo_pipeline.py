@@ -20,6 +20,7 @@ from scipy.stats import binned_statistic
 from scipy.interpolate import UnivariateSpline
 from warnings import warn
 import subprocess as sbp
+from scipy.io import savemat
 # […]
 
 
@@ -474,9 +475,10 @@ class MomoFov:
         self.time_points = dict()  # type: dict[str, dict[str, str]]
         self.chamber_mask = None
         self.chamber_boxes = []
-        self.loaded_chamber_box = []
+        self.loaded_chamber_box = []  # type: list
         self.drift_template = None
         self.template_frame = None
+        self.image_size = None
         # if chamber outlet towards to top in fov, the value is 0.
         self.chamber_direction = None  # type:Union[int, None]
         self.drift_values = None
@@ -518,6 +520,7 @@ class MomoFov:
         self.times = get_times(self.dir, self.fov_name, self.channels)
         im, _ = get_im_time(os.path.join(self.dir, self.fov_name, channel_detect_cell,
                                          self.times[channel_detect_cell][index]))
+        self.image_size = im.shape
         im, _ = rotate_fov(np.expand_dims(im, axis=0), crop=False)
         im = rangescale(im.squeeze(), rescale=(0, 1.))
         self.template_frame = im
@@ -665,7 +668,7 @@ class MomoFov:
                 chamber_frq.append([sg, frq])
 
         # cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.8
-        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.4
+        cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.8
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
         self.loaded_chamber_box = [self.chamber_boxes[index] for index in self.index_of_loaded_chamber]
@@ -746,7 +749,7 @@ class MomoFov:
                 contours_list.append(contours)
             self.chamber_cells_contour[chamber] = contours_list
 
-    def extract_cells_features(self):
+    def extract_cells_features(self, maxium_iter=3):
         # TODO: bug: when channel have no cells, the features results are strange.
 
         for channel in self.channels_function['quantify']:
@@ -777,15 +780,17 @@ class MomoFov:
 
                     self.time_points[channel][time] = time_point
             return None
+
         pb_msg = self.fmt_str("loading fluorescent images")
-        if plf != 'Linux':
-            _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
-                                                         for inx_t, time in enumerate(tqdm(self.times['phase'],
-                                                                                           desc=pb_msg)))
-        else:
-            _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
-                                                         for inx_t, time in enumerate(tqdm(self.times['phase'],
-                                                                                           desc=pb_msg)))
+        if self.channels_function['quantify']:
+            if plf != 'Linux':
+                _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
+                                                             for inx_t, time in enumerate(tqdm(self.times['phase'],
+                                                                                               desc=pb_msg)))
+            else:
+                _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
+                                                             for inx_t, time in enumerate(tqdm(self.times['phase'],
+                                                                                               desc=pb_msg)))
 
         self.cells = {chamber_name: {} for chamber_name in self.loaded_chamber_name}
         print(f'[{self.fov_name}] -> Optimize cell contour.')
@@ -818,7 +823,7 @@ class MomoFov:
                         cell.assign_channel_imgs(channel_imgs)
                     # cell_mask_ori = cell_mask.copy()
                     iter_key = [True] * cells_number
-                    for i in range(3):
+                    for i in range(maxium_iter):
                         for index, cell in enumerate(cells_list):
                             if iter_key[index]:
                                 cell_mask_od = cell.mask.copy()
@@ -898,6 +903,32 @@ class MomoFov:
             print(f'[{self.fov_name}] -> Waring, has no mother cell.')
         return None
 
+    def relink_cells_musk(self):
+        detect_channel_key = self.channels_function["cell_detection"]
+        fov_cells_mask_tensor = np.zeros((len(self.times[detect_channel_key]),) + self.image_size)
+        for tm_inx, time in enumerate(self.times[detect_channel_key]):
+            mask_template = np.zeros(self.image_size)
+            for chamber_index, chamber_name in enumerate(self.loaded_chamber_name):
+                box = self.loaded_chamber_box[chamber_index]
+                try:
+                    chamber_cells = self.cells[chamber_name][time]
+                    chamber_cells_musk = np.sum([(cell_index + 1) * cell.mask_opt.astype(bool)
+                                                 for cell_index, cell in enumerate(chamber_cells)], axis=0)
+                    mask_template[box['ytl']:box['ybr'], box['xtl']:box['xbr']] = chamber_cells_musk
+                except KeyError:  # no cell in chamber at that time
+                    pass
+            if self.chamber_direction == 0:
+                mask_template = mask_template[::-1, ...]
+            fov_cells_mask_tensor[tm_inx, ...] = mask_template  # (xcorr, ycorr)
+
+        dump_mat = dict(file_name=self.times[detect_channel_key],
+                        rotation=self.rotation,
+                        driftcorr=self.drift_values,
+                        cells_mask=fov_cells_mask_tensor.astype(np.uint8))
+        print(self.fmt_str('dumping mat file.'))
+        savemat(os.path.join(self.dir, self.fov_name + '.mat'), dump_mat)
+
+
     def dump_data(self, compress=True):
         print(f"[{self.fov_name}] -> dump memory data.")
         if isinstance(self.dataframe_mother_cells, pd.DataFrame):
@@ -951,16 +982,21 @@ class MomoFov:
 if __name__ == '__main__':
     # %%
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
-    # DIR = r'/home/fulab//data/20210225_pECJ3_M5_L3'
+    # DIR = r'/data/20210225_pECJ3_M5_L3'
     # DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
-    DIR = r"./test_data_set/test_data"
+    DIR = r"/home/fulab/data2/ZZ"
 
     fovs_name = get_fovs(DIR, time_step=120, all_fov=False)
     fovs_num = len(fovs_name)
 
     for fov in fovs_name:
         fov.process_flow_GPU()
-        fov.process_flow_CPU()
+        print(f"[{fov.fov_name}] -> extract cells' features.")
+        fov.extract_cells_features()
+        print(f"[{fov.fov_name}] -> get mother cells data.")
+        fov.parse_mother_cell_data()
+        fov.relink_cells_musk()
+        fov.dump_data()
         # del fov
     # fov1 = fovs_name[0]
     #
