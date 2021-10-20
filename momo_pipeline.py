@@ -38,22 +38,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from scipy.fftpack import fft, fftfreq
 
-# import dask
-# # dask.config.set(pool=ThreadPool(64))
-# from dask.distributed import Client, progress
-# from dask.diagnostics import ProgressBar
-# client = Client(threads_per_worker=64, n_workers=1)
 
-# Allow memory growth for the GPU
-# physical_devices = tf.config.experimental.list_physical_devices('GPU')
-# tf.config.experimental.set_memory_growth(physical_devices[0], True)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
     # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
     try:
         tf.config.experimental.set_virtual_device_configuration(
             gpus[0],
-            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=3 * 2048)])
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2 * 2048)])
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
     except RuntimeError as e:
@@ -96,7 +88,6 @@ def move_img_subfold(base_dir, fold_name='phase'):
 
 
 def get_channel_name(dir, name) -> list:
-    # files = os.listdir(os.path.join(dir, name))
     with os.scandir(os.path.join(dir, name)) as file_it:
         dirs = [file.name for file in file_it if file.is_dir()]
     return dirs
@@ -170,8 +161,17 @@ def back_corrt(im: np.ndarray) -> np.ndarray:
 def get_im_time(ps):
     """
     get the image acq_tim
-    :param ps: str
-    :return: (image ndarray, acq_tim point string)
+
+    Parameters
+    ----------
+    ps : str
+        image path
+
+    Returns
+    ----------
+    Tuple[np.ndarray, Optional[str]]
+        tuple, including the image array and acquisition time.
+
     """
     with tif.TiffFile(ps) as tim:
         try:
@@ -185,11 +185,7 @@ def get_im_time(ps):
 def get_fluo_channel(ps, drift, angle, direct):
     """
 
-    :param ps:
-    :param drift:
-    :param angle:
-    :param direct:
-    :return:
+
     """
     im, time = get_im_time(ps)
     im = rotate_image(im, angle)
@@ -589,7 +585,7 @@ class MomoFov:
             fn: file name (tXX.tiff)
             index: index of time
             """
-            lock.acquire()  # async io is important when using the linux system.
+            lock.acquire()  # async io is important when using linux platform.
             im, tp = get_im_time(os.path.join(self.dir, self.fov_name, channel_detect_cell, fn))
             self.time_points[channel_detect_cell][fn] = tp
             lock.release()
@@ -829,7 +825,6 @@ class MomoFov:
                                 cell_mask_od = cell.mask.copy()
                                 cell_mask = cell.mask.copy()
                                 cell_mask_edge, mask_edge_xy = cv_edge_fullmask2contour(cell_mask, thickness=2)
-                                # cell_mask_edge_2, mask_edge_xy_2 = cv_edge_fullmask2contour(cell_mask)
                                 cell_mask_edge = line_length_filter(cell_mask_edge, 6, 0)
                                 cell_mask_out, mask_out_xy = cv_out_edge_contour(cell_mask, axis=0)
                                 cell_mask_xaxis = np.logical_and(cell_mask_out, np.logical_not(cell_mask_edge))
@@ -856,7 +851,6 @@ class MomoFov:
                                         iter_key[index] = False
                                 else:
                                     iter_key[index] = False
-                        # print(i, iter_key)
                         if True not in iter_key:
                             break
                     for cell in cells_list:
@@ -903,7 +897,7 @@ class MomoFov:
             print(f'[{self.fov_name}] -> Waring, has no mother cell.')
         return None
 
-    def relink_cells_musk(self):
+    def relink_cells_musk(self, mat_mask=False):
         detect_channel_key = self.channels_function["cell_detection"]
         fov_cells_mask_tensor = np.zeros((len(self.times[detect_channel_key]),) + self.image_size)
         for tm_inx, time in enumerate(self.times[detect_channel_key]):
@@ -920,13 +914,13 @@ class MomoFov:
             if self.chamber_direction == 0:
                 mask_template = mask_template[::-1, ...]
             fov_cells_mask_tensor[tm_inx, ...] = mask_template  # (xcorr, ycorr)
-
-        dump_mat = dict(file_name=self.times[detect_channel_key],
-                        rotation=self.rotation,
-                        driftcorr=self.drift_values,
-                        cells_mask=fov_cells_mask_tensor.astype(np.uint8))
-        print(self.fmt_str('dumping mat file.'))
-        savemat(os.path.join(self.dir, self.fov_name + '.mat'), dump_mat)
+        if mat_mask:
+            dump_mat = dict(file_name=self.times[detect_channel_key],
+                            rotation=self.rotation,
+                            driftcorr=self.drift_values,
+                            cells_mask=fov_cells_mask_tensor.astype(np.uint8))
+            print(self.fmt_str('dumping mat file.'))
+            savemat(os.path.join(self.dir, self.fov_name + '.mat'), dump_mat)
 
     def dump_data(self, compress=True):
         print(f"[{self.fov_name}] -> dump memory data.")
@@ -983,7 +977,8 @@ if __name__ == '__main__':
     # DIR = r'Z:\panchu\image\MoMa\20210101_NCM_pECJ3_M5_L3'
     # DIR = r'/data/20210225_pECJ3_M5_L3'
     # DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
-    DIR = r"/home/fulab/data2/ZZ"
+    # DIR = r"/home/fulab/data2/ZZ"
+    DIR = r'test_data_set/test_data'
 
     fovs_name = get_fovs(DIR, time_step=120, all_fov=False)
     fovs_num = len(fovs_name)

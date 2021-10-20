@@ -4,23 +4,26 @@
  @auther: Pan M. CHU
 """
 
+import _thread as thread
 # Built-in/Generic Imports
 import os
+import time
+import sys
+import getopt
+import dask
+import numpy as np
 # Libs
 import pandas as pd
-import numpy as np
+from dask.diagnostics import ProgressBar
+from joblib import dump
+from tqdm import tqdm
+
 # Own modules
 import momo_pipeline as mp
-from joblib import dump
-import dask
-from dask.diagnostics import ProgressBar
-from tqdm import tqdm
-import _thread as thread
-import time
 
 
-def convert_time(time):
-    h, s = divmod(time, 60 * 60)
+def convert_time(time_s: float):
+    h, s = divmod(time_s, 60 * 60)
     m, s = divmod(s, 60)
     h = h + m / 60 + s / 3600
     return h
@@ -39,14 +42,34 @@ def thread_dump(obj: mp.MomoFov, thread_init: int) -> None:
     return None
 
 
+def opt_parse(argv):
+    file_name = argv[0]
+    argv = argv[1:]
+    try:
+        opts, args = getopt.getopt(argv, 'i:')
+    except getopt.GetoptError:
+        print(f'{file_name} -i <directory>')
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt in ['-i']:
+            return arg
+    if len(args) == 1:
+        return args[0]
+    else:
+        raise getopt.GetoptError(f'too much args. {file_name} -i <directory>')
+
+
 # %%
 if __name__ == '__main__':
-#%%
+    # %%
     THREADING = True
     THREADING_Limit = 2
     print('[Momo] -> Loading Files')
     # DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
-    DIR = r"/home/fulab/data/MZX"
+    if len(sys.argv) > 1:
+        DIR = opt_parse(sys.argv)
+    else:
+        DIR = r"./test_data_set/test_data"
     fovs_name = mp.get_fovs(DIR, time_step=120)
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
@@ -93,5 +116,3 @@ if __name__ == '__main__':
             cells_dict.update({na: cells_df})
 
     dump(cells_dict, os.path.join(DIR, 'mothers_raw_dic.jl'), compress='lz4')
-
-
