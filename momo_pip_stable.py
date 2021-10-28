@@ -4,7 +4,7 @@
  @auther: Pan M. CHU
 """
 
-import _thread as thread
+import threading as thread
 # Built-in/Generic Imports
 import os
 import time
@@ -83,10 +83,10 @@ if __name__ == '__main__':
             to_process = fovs_name.pop(0)
             print(f'Processing {init + 1}/{fovs_num}')
             to_process.process_flow_GPU()
-            thread.start_new_thread(thread_dump, (to_process, init))
-            time.sleep(1)
+            thread_of_dump = thread.Thread(target=thread_dump, args=(to_process, init))
+            thread_of_dump.start()
+            # thread.start_new_thread(thread_dump, (to_process, init))
             init += 1
-
         del to_process
 
         while False in exitthread:
@@ -98,7 +98,6 @@ if __name__ == '__main__':
             to_process.process_flow_GPU()
             to_process.process_flow_CPU()
             init += 1
-
         del to_process
 
     all_scv_name = [file for file in os.listdir(DIR) if (file.split('.')[-1] == 'csv')]
