@@ -156,7 +156,7 @@ for pos in range(xp.positions):
                     axis=-1
                 ))
         track_inputs = np.array(track_inputs)  # Format into 4D tensor
-        # Run U-Net model for tracking:
+        # Run U-Net model_for_colony for tracking:
         if track_inputs.size != 0:  # If not empty
             track = model_track.predict(track_inputs, verbose=0)
 

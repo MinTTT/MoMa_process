@@ -24,7 +24,7 @@ from utils.delta.model import unet_seg
 TEST_data_dir = r'./test_data_set/'
 seg_folder_name = TEST_data_dir + 'segmentation_set/'
 outputs_folder = TEST_data_dir + 'segmentataion_results/'
-model_file = TEST_data_dir + '/model/unet_moma_seg_multisets.hdf5'
+model_file = TEST_data_dir + '/model_for_colony/unet_moma_seg_multisets.hdf5'
 unprocessed = listdir(seg_folder_name)
 
 #%%
@@ -33,7 +33,7 @@ target_size = (256, 32)
 input_size = target_size + (1,)
 process_size = 4096
 
-# Load up model:
+# Load up model_for_colony:
 model = unet_seg(input_size=input_size)
 model.load_weights(model_file)
 

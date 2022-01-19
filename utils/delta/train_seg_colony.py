@@ -3,19 +3,20 @@ This script trains the cell segmentation U-Net
 
 @author: jblugagne
 '''
-from model import unet_seg
-from data import trainGenerator_seg
+import os.path
+from utils.delta.model import unet_chambers
+from utils.delta.data import trainGenerator_seg
 from tensorflow.keras.callbacks import ModelCheckpoint
 
 # Files:
-DeLTA_data = 'C:/DeepLearning/DeLTA_data/'
-training_set = DeLTA_data + 'mother_machine/training/segmentation_set/train_multisets/'
-model_file = DeLTA_data + 'mother_machine/models/unet_moma_seg_multisets.hdf5'
+DeLTA_data = r'F:\PHA_library'
+training_set = os.path.join(DeLTA_data, 'train_set')
+model_file = os.path.join(DeLTA_data, 'models', 'Unet_colony.hdf5')
 
 # Parameters:
-target_size = (256, 32)
+target_size = (512, 512)
 input_size = target_size + (1,)
-batch_size = 10
+batch_size = 1
 epochs = 200
 steps_per_epoch = 250
 
@@ -30,14 +31,14 @@ data_gen_args = dict(
     illumination_voodoo=True)
 
 myGene = trainGenerator_seg(batch_size,
-                            training_set + 'img/',
-                            training_set + 'seg/',
-                            training_set + 'wei/',
+                            os.path.join(training_set, 'colony_train'),
+                            os.path.join(training_set, 'colony_mask'),
+                            None,
                             augment_params=data_gen_args,
                             target_size=target_size)
 
 # Define model_for_colony:
-model = unet_seg(input_size=input_size)
+model = unet_chambers(input_size=input_size)
 model.summary()
 model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
 

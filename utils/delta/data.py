@@ -149,7 +149,7 @@ def postprocess(images, square_size=5, min_size=None):
 # def weightmap(mask, classweights, params):
 #     '''
 #     This function computes the weight map as described in the original U-Net
-#     paper to force the model to learn borders 
+#     paper to force the model_for_colony to learn borders
 #     (Not used, too slow. We preprocess the weight maps in matlab)
 #     '''
 
@@ -169,7 +169,7 @@ def postprocess(images, square_size=5, min_size=None):
 
 # %% DATA AUGMENTATION
 def data_augmentation(images_input, aug_par, order=0):
-    '''
+    """
     Data augmentation function
 
     Parameters
@@ -220,7 +220,7 @@ def data_augmentation(images_input, aug_par, order=0):
     output : list of 2D numpy arrays of floats
         Augmented images array.
 
-    '''
+    """
 
     # processing inputs / initializing variables::
     output = list(images_input)
@@ -491,7 +491,9 @@ def trainGenerator_seg(batch_size,
 
     # Get training image files list:
     image_name_arr = glob.glob(os.path.join(img_path, "*.png")) + \
-                     glob.glob(os.path.join(img_path, "*.tif"))
+                     glob.glob(os.path.join(img_path, "*.tif")) + \
+                     glob.glob(os.path.join(img_path, "*.tiff"))
+
 
     # If preloading, load the images and compute weight maps:
     if preload:
@@ -750,7 +752,7 @@ def trainGenerator_track(batch_size,
         # Concatenare and yield inputs and output:
         inputs_arr = np.concatenate((img_arr, seg_arr, previmg_arr, segall_arr), axis=-1)
         outputs_arr = np.concatenate((mother_arr, daughter_arr, bkgd_arr), axis=-1)
-        yield (inputs_arr, outputs_arr)
+        yield inputs_arr, outputs_arr
 
 
 # def predictGenerator_track(test_path,files_list = [],target_size = (256,32)):
@@ -766,16 +768,15 @@ def trainGenerator_track(batch_size,
 #     Images are resized to target_size upon loading.
 #     '''
 
-#     if not files_list:
-#         files_list = os.listdir(test_path)
-#     for index, item in enumerate(files_list):
-#             img = readreshape(os.path.join(test_path + 'img/',os.path.basename(item)), target_size = target_size, order = 1)
-#             seg = readreshape(os.path.join(test_path + 'seg/',os.path.basename(item)), target_size = target_size, binarize = True, order = 0, rangescale = False)
-#             previmg = readreshape(os.path.join(test_path + 'previmg/',os.path.basename(item)), target_size = target_size, order = 1)
-#             segall = readreshape(os.path.join(test_path + 'segall/',os.path.basename(item)), target_size = target_size, binarize = True, order = 0, rangescale = False)
+# if not files_list: files_list = os.listdir(test_path) for index, item in enumerate(files_list): img = readreshape(
+# os.path.join(test_path + 'img/',os.path.basename(item)), target_size = target_size, order = 1) seg = readreshape(
+# os.path.join(test_path + 'seg/',os.path.basename(item)), target_size = target_size, binarize = True, order = 0,
+# rangescale = False) previmg = readreshape(os.path.join(test_path + 'previmg/',os.path.basename(item)), target_size
+# = target_size, order = 1) segall = readreshape(os.path.join(test_path + 'segall/',os.path.basename(item)),
+# target_size = target_size, binarize = True, order = 0, rangescale = False)
 
-#             inputs_arr = np.concatenate((img,seg,previmg,segall),axis=-1)
-#             inputs_arr = np.reshape(inputs_arr,(1,)+inputs_arr.shape) # Tensorflow needs one extra single dimension (so that it is a 4D tensor)
+# inputs_arr = np.concatenate((img,seg,previmg,segall),axis=-1) inputs_arr = np.reshape(inputs_arr,(1,
+# )+inputs_arr.shape) # Tensorflow needs one extra single dimension (so that it is a 4D tensor)
 
 #             yield inputs_arr
 
@@ -900,7 +901,8 @@ def estimateClassweights(gene, num_samples=30):
     # (Where there are only empty daughter images in the training set)
     # Try changing the num_samples value if this is a problem
     class_weights = [(x / num_samples) ** -1 if x != 0 else 0 for x in
-                     class_counts]  # Normalize by nb of samples and invert to get weigths, unless x == 0 to avoid Infinite weights or errors
+                     class_counts]  # Normalize by nb of samples and invert to get weigths, unless x == 0 to avoid
+    # Infinite weights or errors
 
     return class_weights
 

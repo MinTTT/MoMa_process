@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
- @auther: Pan M. CHU
+ @author: Pan M. CHU
 """
 
 # Built-in/Generic Imports

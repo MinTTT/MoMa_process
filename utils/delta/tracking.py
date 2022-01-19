@@ -24,7 +24,7 @@ target_size = (256, 32)
 input_size = target_size + (4,)
 process_size = 512 # This is the number of frames to consider _BEFORE_ each sample has been subdivided into cell-specific tracking samples
 
-# Load up model:
+# Load up model_for_colony:
 model = unet_track(input_size = input_size)
 model.load_weights(model_file)
 

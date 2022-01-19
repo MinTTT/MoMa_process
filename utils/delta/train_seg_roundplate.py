@@ -3,16 +3,18 @@ This script trains the chambers segmentation U-Net.
 
 @author: jblugagne
 '''
-from model import unet_chambers
-from data import trainGenerator_seg
+from utils.delta.model import unet_chambers
+from utils.delta.data import trainGenerator_seg
 from tensorflow.keras.callbacks import ModelCheckpoint
+import os
 
 # Files:
-DeLTA_data = 'C:/DeepLearning/DeLTA_data/'
-training_set = DeLTA_data + 'mother_machine/training/chambers_seg_set/train/'
-model_file = DeLTA_data + 'mother_machine/models/chambers_id_tessiechamp.hdf5'
+DeLTA_data = r'F:\PHA_library'
+training_set = os.path.join(DeLTA_data, 'train_set')
+model_file = os.path.join(DeLTA_data, 'models', 'Unet_plate.hdf5')
 
 # Parameters:
+
 target_size = (512, 512)
 input_size = target_size + (1,)
 batch_size = 1
@@ -33,8 +35,8 @@ data_gen_args = dict(
 )
 
 myGene = trainGenerator_seg(batch_size,
-                            training_set + 'img/',
-                            training_set + 'seg/',
+                            os.path.join(training_set, 'plate_train'),
+                            os.path.join(training_set, 'plate_mask'),
                             None,
                             augment_params=data_gen_args,
                             target_size=target_size)

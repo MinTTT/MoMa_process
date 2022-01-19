@@ -22,23 +22,23 @@ target_size = (256, 32)
 input_size = target_size + (1,)
 process_size = 4096
 
-# Load up model:
-model = unet_seg(input_size = input_size)
+# Load up model_for_colony:
+model = unet_seg(input_size=input_size)
 model.load_weights(model_file)
 
 # Process
-while(unprocessed):
+while (unprocessed):
     # Pop out filenames
     ps = min(process_size, len(unprocessed))
     to_process = unprocessed[0:ps]
     del unprocessed[0:ps]
-    
+
     # Predict:
-    predGene = predictGenerator_seg(inputs_folder, files_list = to_process, target_size = target_size)
-    results = model.predict_generator(predGene,len(to_process), verbose=1)
-    
+    predGene = predictGenerator_seg(inputs_folder, files_list=to_process, target_size=target_size)
+    results = model.predict_generator(predGene, len(to_process), verbose=1)
+
     # Post process results:
-    results[:,:,:,0] = postprocess(results[:,:,:,0])
-    
+    results[:, :, :, 0] = postprocess(results[:, :, :, 0])
+
     # Save to disk:
-    saveResult_seg(outputs_folder,results, files_list = to_process)
+    saveResult_seg(outputs_folder, results, files_list=to_process)

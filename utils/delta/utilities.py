@@ -68,15 +68,15 @@ def deskew(image):
 
 
 def cropbox(img, box):
-    '''
-    Crop image
+    """
+    Crop image  img[box['ytl']:box['ybr'], box['xtl']:box['xbr']]
 
     Parameters
     ----------
     img : 2D numpy array
         Image to crop.
     box : Dictionary
-        Dictionary describing the box to cut out, containing the following 
+        Dictionary describing the box to cut out, containing the following
         elements:
             - 'xtl': Top-left corner X coordinate.
             - 'ytl': Top-left corner Y coordinate.
@@ -88,12 +88,12 @@ def cropbox(img, box):
     2D numpy array
         Cropped-out region.
 
-    '''
+    """
     return img[box['ytl']:box['ybr'], box['xtl']:box['xbr']]
 
 
 def rangescale(frame, rescale):
-    '''
+    """
     Rescale image values to be within range
 
     Parameters
@@ -107,8 +107,7 @@ def rangescale(frame, rescale):
     -------
     2D numpy array of floats
         Rescaled image
-
-    '''
+    """
     frame = frame.astype(np.float32)
     if np.ptp(frame) > 0:
         frame = ((frame - np.min(frame)) / np.ptp(frame)) * np.ptp(rescale) + rescale[0]

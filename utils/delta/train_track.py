@@ -41,7 +41,7 @@ myGene = trainGenerator_track(batch_size,
 
 class_weights = (1,1,1)
 
-# Define model & train it:
+# Define model_for_colony & train it:
 model = unet_track(input_size = input_size, class_weights = class_weights)
 model.summary()
 model_checkpoint = ModelCheckpoint(model_file, monitor='loss',verbose=1, save_best_only=True)

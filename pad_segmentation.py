@@ -54,7 +54,7 @@ def cell_segmentation(imdir=None,
     """
     This function used to predict cell pixels in a given image.
     :param imdir: str. image dir, input a 2048X2048 image.
-    :param model_seg: predict model.
+    :param model_seg: predict model_for_colony.
     :return: nd array, a binary image.
     """
     if 'im' in kwargs:
@@ -94,7 +94,7 @@ def parse_nd2(ND2_FILE_PS, model_seg, **kwargs):
     """
 
     :param ND2_FILE_PS: string, path of ND2 file, this ND2 files have fovs, three channels including phase contrast, fluor channels X2
-    :param model_seg: tensorflow model
+    :param model_seg: tensorflow model_for_colony
     :param kwargs: kwargs including 'split_factor'. default is 8.
     :return: a list containing Cell objs predicted from nd files.
     """
@@ -208,12 +208,12 @@ df_summary = get_describe(sample_jl, column_keys)
 df_summary['sample'] = [file_name.split('.')[0] for file_name in LJ_FILE_NAME]
 df_summary.to_csv(ND2_FILE_DIR + 'statistics.csv')
 # ND2_FILE_PS = r'X:/chupan/AGAR_PAD/20201214_AGARPAD/220201214_GLU_GLUTAMTE_NH2_PECJ3_002.nd2'
-# MODEL_FILE = r'./test_data_set/model/delta_pads_seg.hdf5'
+# MODEL_FILE = r'./test_data_set/model_for_colony/delta_pads_seg.hdf5'
 #
 # cells = parse_nd2(ND2_FILE_PS, model_seg)
 # %%
 # Own modules
-# MODEL_FILE = r'./test_data_set/model/delta_pads_seg.hdf5'
+# MODEL_FILE = r'./test_data_set/model_for_colony/delta_pads_seg.hdf5'
 # IMAGE_DIR = r'F:/Agar_seg/'
 #
 # ims_name = os.listdir(IMAGE_DIR)
