@@ -154,6 +154,11 @@ if __name__ =='__main__':
     file_name = file_dir.split('\\')[-1].split('.')[0]
     images = ND2MultiDim(file_dir)
 
+    #%%
+    nd2_ps = r'F:\MoMa_MZX\20211220.BW25113.MOPS-glycerol&RDM.micro\20211220.BW25113.MOPS-glycerol&RDM.micro.nd2'
+    save_dir = r'F:\MoMa_MZX\20211220.BW25113.MOPS-glycerol&RDM.micro'
+    nd2_imgs = ND2MultiDim(nd2_ps)
+    output_single_vof(nd2_imgs, nd2_ps.split('\\')[-1].split('.')[0], save_dir)
 
     # %% out put vofs with stacked time points
     output_vof_tstack2(images, file_name, save_dir)

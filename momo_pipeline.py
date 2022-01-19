@@ -442,6 +442,20 @@ class Cell:
 
 
 class MomoFov:
+    """
+    pipeline for analyzing the MOMA data.
+
+    1. Find the channels in first frames of FOVs.
+        .detect_channels()
+    2. Tune the location shift in each frame. The xy and rotation shift are calculated.
+        .detect_frameshift()
+    3. Detected the cells in side chambers.
+        .cell_detection()
+
+    .extract_cells_features()
+    .parse_mother_cell_data()
+    .dump_data()
+    """
     loaded_chamber_name: List[str]  # chamber names of loaded
     times: Union[Dict[str, List[str]], None] = None
 
@@ -461,11 +475,11 @@ class MomoFov:
         self.dir = fov_dir_base  # type: str  # where the fov fold contain.
         self.cell_mini_size = cell_minial_px  # type: int
         self.channels = get_channel_name(self.dir, self.fov_name)  # type: List[str] # channel names in list
-        if len(self.channels) == 0:
+        if len(self.channels) == 0:  # if there is no sub-fold of light channels in fov fold, it will create a new one.
             self.channels = [cell_detection]
             move_img_subfold(os.path.join(self.dir, self.fov_name), fold_name='phase')
         quantify = [ch for ch in quantify if ch in self.channels]
-        self.channels_function = {"cell_detection": cell_detection, "quantify": quantify}
+        self.channels_type = {"cell_detection": cell_detection, "quantify": quantify}  # type: Dict[str, str]
         self.times = None
         self.phase_ims = None  # type: Union[np.ndarray, None]  # [time number, 0 axis, 1 axis]
         self.time_points = dict()  # type: dict[str, dict[str, str]]
@@ -478,7 +492,7 @@ class MomoFov:
         # if chamber outlet towards to top in fov, the value is 0.
         self.chamber_direction = None  # type:Union[int, None]
         self.drift_values = None
-        # NOTE: cell_mask have a order which is dependent on times. i.e. #chan_1 ---times----
+        # NOTE: cell_mask have an order which is dependent on times. i.e. #chan_1 ---times----
         # #chan_2 --- times---
         self.cell_mask = None
         self.chamber_cells_mask = dict()  # type: Dict[str, np.ndarray]  # {chamber_name:[time, axis0, axis1]}
@@ -512,7 +526,7 @@ class MomoFov:
         :param index: int,
         :return:
         """
-        channel_detect_cell = self.channels_function['cell_detection']
+        channel_detect_cell = self.channels_type['cell_detection']
         self.times = get_times(self.dir, self.fov_name, self.channels)
         im, _ = get_im_time(os.path.join(self.dir, self.fov_name, channel_detect_cell,
                                          self.times[channel_detect_cell][index]))
@@ -525,19 +539,13 @@ class MomoFov:
         y_bl, x_bl = tuple([round((2048 - length) / 2) for length in im.shape])
         back_ground[y_bl:(y_bl + im.shape[0]), x_bl:(x_bl + im.shape[1])] = im.copy()
         first_frame = np.expand_dims(np.expand_dims(cv2.resize(back_ground.squeeze(), (512, 512)), axis=0), axis=3)
-        # fig, ax = plt.subplots(1, 1)
-        # ax.imshow(first_frame.squeeze())
-        # fig.show()
-        # using expand_dims to get it into a shape that the chambers id unet accepts
-        # Find chambers, filter results, get bounding boxes:
+
         chamber_mask = model_chambers.predict(first_frame, verbose=0)
         chamber_mask = cv2.resize(np.squeeze(chamber_mask), back_ground.shape)
         chamber_mask = chamber_mask[y_bl:(y_bl + im.shape[0]), x_bl:(x_bl + im.shape[1])]
-        # scaling back to original size
-        # chamber_mask = rangescale(chamber_mask, (0, 255)).astype(np.uint8)
-        # chamber_mask, _ = cv_otsu(chamber_mask, gaussian_core=(9, 9))
+
         chamber_mask = postprocess(chamber_mask, min_size=min_chamber_area)  # Binarization, cleaning
-        # and area filtering
+
         self.chamber_boxes = getChamberBoxes(np.squeeze(chamber_mask))
 
         print(f"[{self.fov_name}] -> detect {len(self.chamber_boxes)} chambers.")
@@ -574,7 +582,7 @@ class MomoFov:
         This function used to detect frame shift.
         :return: None
         """
-        channel_detect_cell = self.channels_function['cell_detection']
+        channel_detect_cell = self.channels_type['cell_detection']
         print(f'[{self.fov_name}] -> loading phase images.')
         self.phase_ims = np.zeros((len(self.times[channel_detect_cell]),) + self.template_frame.shape)
         self.time_points[channel_detect_cell] = {}
@@ -698,7 +706,7 @@ class MomoFov:
         return [self.index_of_loaded_chamber, self.chamber_gray_level, chamber_frq]
 
     def cell_detection(self):
-        channel_detect_cell = self.channels_function['cell_detection']
+        channel_detect_cell = self.channels_type['cell_detection']
         chmber_ims = self.__dict__[self.ims_channels_dict[channel_detect_cell]]
         seg_inputs = ()
         for m, chamberbox in enumerate(self.loaded_chamber_box):
@@ -709,7 +717,7 @@ class MomoFov:
                                  for i, t in enumerate(self.times[channel_detect_cell])}
                 chmber_ims[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_imgs_dict
         seg_inputs = np.copy(np.concatenate(seg_inputs, axis=0))
-        del self.phase_ims  # release memory
+        # del self.phase_ims  # release memory
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
         self.chamber_seg = seg_inputs
         # Format into 4D tensor
@@ -748,7 +756,7 @@ class MomoFov:
     def extract_cells_features(self, maxium_iter=3):
         # TODO: bug: when channel have no cells, the features results are strange.
 
-        for channel in self.channels_function['quantify']:
+        for channel in self.channels_type['quantify']:
             self.__dict__[self.ims_channels_dict[channel]] = {chamber_na: {}
                                                               for chamber_na in self.loaded_chamber_name}
             self.time_points[channel] = {}
@@ -759,7 +767,7 @@ class MomoFov:
             names and their elements are lists containing chambers ordered by loaded chamber in 
             self.loaded_chamber_name. 
             """
-            for channel in self.channels_function['quantify']:
+            for channel in self.channels_type['quantify']:
                 ims_channels_dict = self.__dict__[self.ims_channels_dict[channel]]
                 if time in self.times[channel]:
                     drift_valu = (self.drift_values[0][inx_t], self.drift_values[1][inx_t])
@@ -778,7 +786,7 @@ class MomoFov:
             return None
 
         pb_msg = self.fmt_str("loading fluorescent images")
-        if self.channels_function['quantify']:
+        if self.channels_type['quantify']:
             if plf != 'Linux':
                 _ = Parallel(n_jobs=-1, require='sharedmem')(delayed(parallel_flur_seg)(inx_t, time)
                                                              for inx_t, time in enumerate(tqdm(self.times['phase'],
@@ -792,7 +800,7 @@ class MomoFov:
         print(f'[{self.fov_name}] -> Optimize cell contour.')
         for cha_name_inx, chamber_name in enumerate(tqdm(self.loaded_chamber_name,
                                                          desc=self.fmt_str("Optimize cell contour"))):
-            detect_channel_key = self.channels_function["cell_detection"]
+            detect_channel_key = self.channels_type["cell_detection"]
             detect_imgs_dict = self.__dict__[self.ims_channels_dict[detect_channel_key]]
             for tm_inx, time in enumerate(self.times[detect_channel_key]):
                 cells_contour = self.chamber_cells_contour[chamber_name][tm_inx]
@@ -855,7 +863,7 @@ class MomoFov:
                             break
                     for cell in cells_list:
                         cell.cal_cell_skeleton()
-                        cell.cal_cel_flu_leve(self.channels_function["quantify"])
+                        cell.cal_cel_flu_leve(self.channels_type["quantify"])
 
     def parse_mother_cell_data(self):
         """
@@ -867,7 +875,7 @@ class MomoFov:
             self.mother_cell_pars[chamber] = []
             for time_key, cells in self.cells[chamber].items():
                 mother_cell = cells[0]  # mother cell
-                time_point = self.time_points[self.channels_function["cell_detection"]][time_key]
+                time_point = self.time_points[self.channels_type["cell_detection"]][time_key]
                 mother_cell_dict = dict(spine_length=mother_cell.spine_length,
                                         area=mother_cell.area,
                                         time_point=time_point)
@@ -898,7 +906,7 @@ class MomoFov:
         return None
 
     def relink_cells_musk(self, mat_mask=False):
-        detect_channel_key = self.channels_function["cell_detection"]
+        detect_channel_key = self.channels_type["cell_detection"]
         fov_cells_mask_tensor = np.zeros((len(self.times[detect_channel_key]),) + self.image_size)
         for tm_inx, time in enumerate(self.times[detect_channel_key]):
             mask_template = np.zeros(self.image_size)
@@ -978,7 +986,7 @@ if __name__ == '__main__':
     # DIR = r'/data/20210225_pECJ3_M5_L3'
     # DIR = r"/media/fulab/4F02D2702FE474A3/MZX"
     # DIR = r"/home/fulab/data2/ZZ"
-    DIR = r'test_data_set/test_data'
+    DIR = r'F:\MoMa_MZX\20211220.BW25113.MOPS-glycerol&RDM.micro\exported'
 
     fovs_name = get_fovs(DIR, time_step=120, all_fov=False)
     fovs_num = len(fovs_name)
