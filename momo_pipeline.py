@@ -176,7 +176,7 @@ def get_im_time(ps):
     with tif.TiffFile(ps) as tim:
         try:
             acq_tim = tim.shaped_metadata[0]['time']
-        except TypeError:
+        except (TypeError, KeyError):
             acq_tim = None
 
         return tim.asarray(), acq_tim
@@ -212,7 +212,8 @@ def parallel_seg_input(ims, box, size=(256, 32)):
     subims = ims[:, box['ytl']:box['ybr'], box['xtl']:box['xbr']]
     ims_num = len(subims)
     resize_ims = np.empty((ims_num,) + size)
-    _ = Parallel(n_jobs=32, require='sharedmem')(delayed(resize_map)(im_inx, size) for im_inx in range(ims_num))
+    _ = Parallel(n_jobs=32, require='sharedmem')(delayed(resize_map)(im_inx, size)
+                                                 for im_inx in range(ims_num))
     return resize_ims, subims
 
 
@@ -220,9 +221,21 @@ def get_fovs(dir, all_fov=False, sort=True, **kwargs):
     """
     Get fovs name under dir, if fovs in dir have been treated (i.e. having a memory obj in folder dir), these fovs will
     not returned.
-    :param dir: str, ps
-    :param all_fov: bool, if True, return all folders, default, False.
-    :return: list
+
+    Parameters
+    -----------
+    dir: str
+        the directory for FOVs.
+    all_fov: bool, default False
+        check whether a FOV have been treated, i.e., whether the .jl file having same name is in the fov directory.
+    sort: bool, default True
+        sort the FOV name by its name.
+
+    Returns
+    ------------
+    fov_name: List[MomoFov]
+        A list containing MomoFov objections.
+
     """
     fov_tag = ['fov', 'pos']
     DIR = dir
@@ -675,6 +688,7 @@ class MomoFov:
         cells_threshold = np.min(chamber_graylevel) + np.ptp(chamber_graylevel) * 0.8
         chamber_loaded = [True if value < cells_threshold else False for value in chamber_graylevel]
         self.index_of_loaded_chamber = list(np.where(chamber_loaded)[0])
+        self.loaded_chamber_name = [f'ch_{chamber_i}' for chamber_i in self.index_of_loaded_chamber]
         self.loaded_chamber_box = [self.chamber_boxes[index] for index in self.index_of_loaded_chamber]
 
         if self.experiment_mode:
@@ -703,9 +717,6 @@ class MomoFov:
         self.chamber_gray_level = chamber_graylevel
         # print(f'[{self.fov_name}] -> , chamber_graylevel)
         print(f'[{self.fov_name}] -> detect loaded chamber number: {len(self.loaded_chamber_box)}.')
-        return [self.index_of_loaded_chamber, self.chamber_gray_level, chamber_frq]
-
-    def cell_detection(self):
         channel_detect_cell = self.channels_type['cell_detection']
         chmber_ims = self.__dict__[self.ims_channels_dict[channel_detect_cell]]
         seg_inputs = ()
@@ -720,9 +731,15 @@ class MomoFov:
         # del self.phase_ims  # release memory
         seg_inputs = np.expand_dims(np.array(seg_inputs), axis=3)
         self.chamber_seg = seg_inputs
+
+
+        return [self.index_of_loaded_chamber, self.chamber_gray_level, chamber_frq]
+
+    def cell_detection(self):
+        channel_detect_cell = self.channels_type['cell_detection']
         # Format into 4D tensor
         # Run segmentation U-Net:
-        seg = model_seg.predict(seg_inputs)
+        seg = model_seg.predict(self.chamber_seg)
         self.cell_mask = postprocess(seg[:, :, :, 0], min_size=self.cell_mini_size, square_size=5)
 
         # -------------- reform the size--------------
@@ -742,7 +759,6 @@ class MomoFov:
 
             self.chamber_cells_mask[f'ch_{self.index_of_loaded_chamber[m]}'] = ori_frames
         # -------------- get cells contour ------------
-        self.loaded_chamber_name = list(self.chamber_cells_mask.keys())
         for chamber in self.loaded_chamber_name:
             contours_list = []
             for time_mask in self.chamber_cells_mask[chamber]:
@@ -990,6 +1006,18 @@ if __name__ == '__main__':
 
     fovs_name = get_fovs(DIR, time_step=120, all_fov=False)
     fovs_num = len(fovs_name)
+
+    for fov in fovs_name:
+        fov.detect_channels()
+        fov.detect_frameshift()
+        from random import sample
+        for cham_key, cham_ims_dict in fov.chamber_phase_ims.items():
+            selt_cham_na = sample(list(cham_ims_dict.keys()), 1)
+
+            for cham_nam in selt_cham_na:
+                tif.imsave(os.path.join(r'F:\MoMa_MZX\Exported_chamber', f'{fov.fov_name}_{cham_key}_{cham_nam}'),
+                           cham_ims_dict[cham_nam])
+
 
     for fov in fovs_name:
         fov.process_flow_GPU()
