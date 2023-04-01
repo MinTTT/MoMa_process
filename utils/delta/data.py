@@ -104,7 +104,7 @@ def readreshape(filename, target_size=(256, 32), binarize=False, order=1, ranges
     return i
 
 
-def postprocess(images, square_size=5, min_size=None):
+def postprocess(images, square_size=5, min_size=None, iterNum=1):
     """
     A generic binary image cleaning function based on mathematical morphology.
 
@@ -119,12 +119,16 @@ def postprocess(images, square_size=5, min_size=None):
         Remove objects smaller than this minimum area value. If None, the
         operation is not performed.
         The default is None.
+    iterNum : int, optional
+        opening operation number.
+        The default is 1.
 
     Returns
     -------
     images : 2D numpy array
         Cleaned, binarized images. Note that the dimensions are squeezed before
         return (see numpy.squeeze doc)
+
 
     """
 
@@ -138,7 +142,8 @@ def postprocess(images, square_size=5, min_size=None):
     # Go through stack:
     for index, I in enumerate(images):
         I = binarizerange(I)
-        I = binary_opening(I, selem=selem)
+        for i in range(iterNum):
+            I = binary_opening(I, selem=selem)
         if min_size is not None:
             I = remove_small_objects(I, min_size=min_size)
         images[index, :, :] = I

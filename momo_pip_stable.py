@@ -63,14 +63,14 @@ def opt_parse(argv):
 if __name__ == '__main__':
     # %%
     THREADING = True
-    THREADING_Limit = 2
+    THREADING_Limit = 12
     print('[Momo] -> Loading Files')
     # DIR = r'/media/fulab/4F02D2702FE474A3/MZX'
     if len(sys.argv) > 1:
         DIR = opt_parse(sys.argv)
     else:
         DIR = r"./test_data_set/test_data"
-    fovs_name = mp.get_fovs(DIR, time_step=120)
+    fovs_name = mp.get_fovs(DIR, time_step=120, quantify=['YFP'])
     fovs_num = len(fovs_name)
     exitthread = [False] * fovs_num
     threading_working = [False] * fovs_num
