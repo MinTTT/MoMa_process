@@ -21,11 +21,12 @@ import cv2
 from utils.delta.utilities import rangescale
 from tqdm import tqdm
 import numpy as np  # Or any other
-from typing import Tuple, Union, Dict, Optional, Any
+from typing import Tuple, Union, Dict, Optional, Any, List
 from scipy.stats import binned_statistic
 from warnings import warn
 import utils.sciplot as splt
 from scipy.optimize import leastsq, minimize
+from joblib import Parallel, delayed
 
 splt.whitegrid()
 
@@ -44,7 +45,6 @@ if gpus:
         print(e)
 
 
-# %%
 def cell_segmentation(imdir=None,
                       model_seg=None,
                       split_factor=8, debug=False, overlap=0.05, **kwargs):
@@ -240,6 +240,57 @@ def cv_full_contour2mask(cnt, size) -> Tuple[np.ndarray, np.ndarray]:
     return mask, points_index
 
 
+def optimizeCellMaskOtsuThreshold(phaseImage, oriMask, fovIndex=0, maxium_iter=3, snapSize=(64, 64), **kwargs):
+    xLen, yLen = phaseImage.shape
+    contours = cv2.findContours(oriMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]  # find
+    contours.sort(key=lambda elem: np.sum(np.max(elem[:, 0, 0] + np.max(elem[:, 0, 1]))))
+    cells = []
+    for c, contour in enumerate(contours):  # Run through cells in frame
+        cell = Cell(cell_index=c + 1, fov=fovIndex + 1)
+        cell.set_mask_init(contour, size=(yLen, xLen))
+        cell.assign_channel_img('phase', phaseImage)
+        cells.append(cell)
+
+    cells_number = len(cells)
+    iter_key = [True] * cells_number
+    for i in range(maxium_iter):
+        all_cell_mask = [c.mask_opt for c in cells]
+        blankMask = np.sum(all_cell_mask, axis=0, dtype=bool)
+        for index, cell in enumerate(cells):
+            cellLoc = cell.contour[0, 0, :][::-1]
+            snapUL = cellLoc - snapSize
+            snapDR = cellLoc + snapSize
+            snapUL[snapUL < 0] = 0
+            snapDR[snapDR > yLen] = yLen
+            snapSlice = [slice(snapUL[0], snapDR[0]), slice(snapUL[1], snapDR[1])]
+            cellsnap = cell.channel_imgs['phase'][snapSlice[0], snapSlice[1]]
+
+            cellmasksnap = all_cell_mask[index][snapSlice[0], snapSlice[1]]
+            cellmasksnapOld = cellmasksnap.copy()
+            othercellmask = np.logical_xor(blankMask[snapSlice[0], snapSlice[1]], cellmasksnapOld).astype(np.uint8)
+            convertsnap = 1 - rangescale(cellsnap, (0, 1.))
+
+            snapmask_new, otsu_thre = cv_otsu(convertsnap)
+            cell_mask_edge, mask_edge_xy = cv_edge_fullmask2contour(cellmasksnap, thickness=8)
+            edge_revise_mask = np.logical_or(cellmasksnap, cell_mask_edge)
+            snapmask_new = np.logical_and(edge_revise_mask, snapmask_new)
+            snapmask_new = cv_open(snapmask_new.astype(np.uint8))
+            snapmask_new = np.logical_and(snapmask_new, np.logical_not(othercellmask))
+
+            if snapmask_new.any():
+                mask_ = np.zeros((yLen, xLen), dtype=np.uint8)
+                mask_[snapSlice[0], snapSlice[1]] = snapmask_new.astype(np.uint8)
+                cell.mask_opt = mask_
+                checkarray = cellmasksnapOld == snapmask_new
+                if checkarray.all():
+                    iter_key[index] = False
+            else:
+                iter_key[index] = False
+            if True not in iter_key:
+                break
+    return cells
+
+
 def cv_edge_counter2mask(cnt, size, thickness=1) -> Tuple[np.ndarray, np.ndarray]:
     mask = np.zeros(size, np.uint8)
     cv2.drawContours(mask, [cnt], 0, 255, thickness)
@@ -303,9 +354,6 @@ def line_length_filter(img, length, axis):
     return dst
 
 
-from scipy.optimize import fmin_bfgs
-
-
 class TwodegreePoly(object):
     a = None
     b = None
@@ -317,6 +365,17 @@ class TwodegreePoly(object):
         self.c = c
 
     def __call__(self, x):
+        """
+        Return y = a x^2 + b x + c
+        Parameters
+        ----------
+        x : Union[float, int, np.ndarray]
+
+        Returns
+        -------
+        Union[float, int, np.ndarray]
+            y
+        """
         return self.a * x * x + self.b * x + self.c
 
     def _derivative(self, x: Union[float, np.ndarray]):
@@ -326,47 +385,69 @@ class TwodegreePoly(object):
         return self._derivative
 
 
-# def FitCellParameters(newPars, cellMask, x_p, y_p, a, b, c, cell_width):
-#     # if isinstance(newPars, list):
-#     #     newPars = np.array(newPars)
-#     # newPars = newPars / 1000
-#     def calculate_Chi(newPars, cellMask, x_p, y_p, a, b, c, cell_width):
-#         # newPars = newPars * 1000
-#         x_min, x_max = newPars
-#
-#         x_c = calc_xc([c, b, a], x_p, y_p)
-#         x_c[x_c < x_min] = x_min
-#         x_c[x_c > x_max] = x_max
-#
-#         r = calc_r([a, b, c], x_p, y_p, x_c)
-#
-#         newmask = np.zeros(r.shape, dtype=bool)
-#         newmask[r <= (cell_width / 2)] = True
-#         chi2 = np.sum(newmask ^ cellMask).astype(float)
-#         return chi2
-#
-#     fit_parameters = minimize(calculate_Chi, newPars, args=(cellMask, x_p, y_p, a, b, c, cell_width),
-#                               method='Nelder-Mead')
-#     return fit_parameters
-
 def calculate_Chi(x_min, x_max, cellMask, x_p, y_p, a, b, c, cell_width):
-    # newPars = newPars * 1000
-    # x_min, x_max = newPars
+    """
+    Return a cell mask depends on cell corrd.
+    Parameters
+    ----------
+    x_min :
+    x_max :
+    cellMask :
+    x_p :
+    y_p :
+    a :
+    b :
+    c :
+    cell_width :
 
+    Returns
+    -------
+
+    """
+    new_mask = calculate_corrd_mask(x_min, x_max, x_p, y_p, a, b, c, cell_width)
+    chi2 = np.sum(new_mask ^ cellMask).astype(float)
+    return chi2
+
+
+def calculate_corrd_mask(x_min, x_max, x_p, y_p, a, b, c, cell_width):
     x_c = calc_xc([c, b, a], x_p, y_p)
     x_c[x_c < x_min] = x_min
     x_c[x_c > x_max] = x_max
 
     r = calc_r([a, b, c], x_p, y_p, x_c)
 
-    newmask = np.zeros(r.shape, dtype=bool)
-    newmask[r <= (cell_width / 2)] = True
-    chi2 = np.sum(newmask ^ cellMask).astype(float)
-    return chi2
+    new_mask = np.zeros(r.shape, dtype=bool)
+    new_mask[r <= (cell_width / 2)] = True  # r == cell_width / 2
+
+    return new_mask
 
 
 def FitCellParameters(x_min, x_max, cellMask, x_p, y_p, a, b, c, cell_width,
                       modes=None):
+    """
+
+    Parameters
+    ----------
+    x_min : float
+        x_min
+    x_max : float
+        x_max
+    cellMask : numpy.ndarray
+        cell binary Mask
+    x_p :
+    y_p :
+    a :
+    b :
+    c :
+    cell_width :
+    modes : string
+        modes should be opt_xir, opt_wideth, or opt_poly2
+
+    Returns
+    -------
+
+    """
+
     def opt_xir(newPars, cellMask, x_p, y_p, a, b, c, cell_width):
         x_min, x_max = newPars
         return calculate_Chi(x_min, x_max, cellMask, x_p, y_p, a, b, c, cell_width)
@@ -508,7 +589,10 @@ def solve_trig(a, b, c, d):
 
     p = (3. * a * c - b ** 2.) / (3. * a ** 2.)
     q = (2. * b ** 3. - 9. * a * b * c + 27. * a ** 2. * d) / (27. * a ** 3.)
-    assert (np.all(p < 0))
+    try:
+        assert (np.all(p < 0))
+    except AssertionError:
+        p[p < 0] = np.nan
     k = 0.
     t_k = 2. * np.sqrt(-p / 3.) * np.cos(
         (1 / 3.) * np.arccos(((3. * q) / (2. * p)) * np.sqrt(-3. / p)) - (2 * np.pi * k) / 3.)
@@ -601,6 +685,8 @@ class Cell:
         self.x_min = None
         self.x_max = None
         self.snapSlice = []
+        self.cellCoord = False
+        self.cellSkeletonSuccess = None
 
     def set_mask_init(self, cnt, size):
         self.contour_init = cnt
@@ -655,8 +741,8 @@ class Cell:
         erosion = cv_erode(cellmask, 6, 2)
 
         skelpoints = np.where(erosion)  # (0 index, 1 index)
-        # print(skelpoints)
         if len(skelpoints[0]) == 0:
+            self.cellSkeletonSuccess = False
             return None
         y_stat = binned_statistic(skelpoints[xindex], skelpoints[yindex],
                                   'mean', bins=bins)
@@ -670,6 +756,28 @@ class Cell:
         self.skeleton_func = FitTwoDegreePoly(self.skeleton[:, 0], self.skeleton[:, 1])
 
         self.x_min, self.x_max = self._contour_opt[:, 0, yindex].min(), self._contour_opt[:, 0, yindex].max()
+
+        # spine, spine Length, rectangle, area
+        self._calc_parameters()
+
+        # width_area, width
+        a, b, c = (np.pi - 4) / 4, self.spine_length, -self.area
+        self.width_area = (-b + np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+        # self.intensity = None
+        dists = []
+        for indexsket in range(len(self.spine)):
+            dist = ((self.contour[:, 0, yindex] - self.spine[indexsket, 0]) ** 2 + (
+                    self.contour[:, 0, xindex] - self.spine[indexsket, 1]) ** 2) ** (1 / 2)
+            dists.append(np.nanmin(dist))
+        self.width = np.nanmedian(dists) * self.umppx * 2
+
+        if np.isnan(self.width):
+            self.cellSkeletonSuccess = False
+        else:
+            self.cellSkeletonSuccess = True
+
+    def _calc_parameters(self):
+        # spine, spine Length, rectangle, area
         x_space = np.linspace(self.x_min, self.x_max, endpoint=True)
         self.spine = np.hstack((x_space.reshape(-1, 1),
                                 self.skeleton_func(x_space).reshape(-1, 1)))
@@ -682,25 +790,16 @@ class Cell:
         )
         self.area = cv2.contourArea(self._contour_opt) * self.umppx ** 2
 
-        dists = []
-        for indexsket in range(len(self.spine)):
-            dist = ((self.contour[:, 0, yindex] - self.spine[indexsket, 0]) ** 2 + (
-                    self.contour[:, 0, xindex] - self.spine[indexsket, 1]) ** 2) ** (1 / 2)
-            # print(dist)
-            dists.append(np.nanmin(dist))
-        self.width = np.nanmedian(dists) * self.umppx * 2
-
-        a, b, c = (np.pi - 4) / 4, self.spine_length, -self.area
-        self.width_area = (-b + np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
-        self.intensity = None
-
     def opt_skeleton(self):
+        if self.cellSkeletonSuccess is False:
+            return None
+
         pixle1, pixle0 = np.meshgrid(np.arange(self.fov_size[0], dtype=int),
                                      np.arange(self.fov_size[1], dtype=int))
 
         self.getCellSnapRange()
-        contoursnap = self.mask_opt[self.snapSlice[0], self.snapSlice[1]]
-        # len0, len1 = contoursnap.shape
+        mask_snap = self.mask_opt[self.snapSlice[0], self.snapSlice[1]]
+
         subPixle1 = pixle1[self.snapSlice[0], self.snapSlice[1]]
         subPixle0 = pixle0[self.snapSlice[0], self.snapSlice[1]]
         if self.verticalCell:
@@ -709,23 +808,59 @@ class Cell:
             x_p, y_p = subPixle1, subPixle0
 
         a, b, c = self.skeleton_func.a, self.skeleton_func.b, self.skeleton_func.c
+        try:
+            ret_xir = FitCellParameters(self.x_min, self.x_max,
+                                        mask_snap.astype(bool),
+                                        x_p, y_p, a, b, c, self.width_area / self.umppx,
+                                        'opt_xir')
+            if ret_xir.success:
+                self.x_min, self.x_max = ret_xir.x
+        except AssertionError:
+            pass
 
-        ret_xir = FitCellParameters(self.x_min, self.x_max,
-                                    contoursnap.astype(bool),
-                                    x_p, y_p, a, b, c, self.width_area / self.umppx,
-                                    'opt_xir')
+        try:
+            ret_abc = FitCellParameters(self.x_min, self.x_max,
+                                        mask_snap.astype(bool),
+                                        x_p, y_p, a, b, c, self.width_area / self.umppx,
+                                        'opt_poly2')
+            if ret_abc.success:
+                self.skeleton_func = TwodegreePoly(*ret_abc.x)
+                a, b, c = self.skeleton_func.a, self.skeleton_func.b, self.skeleton_func.c
 
-        ret_abc = FitCellParameters(*ret_xir.x,
-                                    contoursnap.astype(bool),
-                                    x_p, y_p, a, b, c, self.width_area / self.umppx,
-                                    'opt_poly2')
+        except AssertionError:
+            pass
 
-        ret_width = FitCellParameters(*ret_xir.x,
-                                      contoursnap.astype(bool),
-                                      x_p, y_p, *ret_abc.x, self.width_area / self.umppx,
-                                      'opt_width')
-        self.skeleton_func = 
+        try:
+            ret_width = FitCellParameters(self.x_min, self.x_max,
+                                          mask_snap.astype(bool),
+                                          x_p, y_p, a, b, c, self.width_area / self.umppx,
+                                          'opt_width')
+            if ret_width.success:
+                self.width = ret_width.x[0] * self.umppx
+        except AssertionError:
+            pass
 
+        # if ret_xir.success or ret_abc.success or ret_width.success:
+        #     self.cellCoord = True
+        #     if ret_abc.success:
+        #         self.skeleton_func = TwodegreePoly(*ret_abc.x)
+        #     if ret_xir.success:
+        #         self.x_min, self.x_max = ret_xir.x
+        #     if ret_width.success:
+        #         self.width = ret_width.x[0] * self.umppx
+        try:
+            optimized_croodMask = np.zeros(self.fov_size, dtype=np.uint8)
+            a, b, c = self.skeleton_func.a, self.skeleton_func.b, self.skeleton_func.c
+
+            optimized_croodMask[self.snapSlice[0], self.snapSlice[1]] = \
+                calculate_corrd_mask(self.x_min, self.x_max, x_p, y_p, a, b, c, self.width / self.umppx).astype(
+                    np.uint8)
+            self.mask_opt = optimized_croodMask
+            self._calc_parameters()
+            self.spine_length += self.width
+            self.cellCoord = True
+        except IndexError:
+            pass
 
     def getCellSnapRange(self, snapSize=64):
         cellLoc = self.contour[0, 0, :][::-1]
@@ -767,6 +902,9 @@ MODEL_FILE = r'./test_data_set/model/delta_pads_seg.hdf5'
 tiffPath = r'K:\AD_data\MOPS_Gly_100.tif'
 
 imageData = tiff.imread(tiffPath)
+if len(imageData.shape) == 2:
+    imageData = np.expand_dims(imageData, axis=0)
+
 imageNum, xLen, yLen = imageData.shape
 target_size_seg = (1024, 1024)
 model_seg = unet_seg(input_size=target_size_seg + (1,))
@@ -781,69 +919,35 @@ for i in tqdm(range(imageNum)):
 tiff.imsave(tiffPath + '.seg.tif', segmentations)
 
 # %%
-tiffPath = r'K:\AD_data\MOPS_Gly_100.tif'
+tiffPath = r'K:\AD_data\MOPS_Ala_100.tif'
 contourpath = tiffPath + '.seg.tif'
 imageData = tiff.imread(tiffPath)
 contourData = tiff.imread(contourpath)
+
+if len(imageData.shape) == 2:
+    imageData = np.expand_dims(imageData, axis=0)
 imageNum, xLen, yLen = imageData.shape
-imageNum = 1
-snapSize = (64, 64)
-maxium_iter = 3
-print('========> Processing contours')
-fovCells = []
-for fovIndex in tqdm(range(imageNum)):
-    contours = cv2.findContours(contourData[fovIndex, ...], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]  # find
-    contours.sort(key=lambda elem: np.sum(np.max(elem[:, 0, 0] + np.max(elem[:, 0, 1]))))
-    cells = []
-    for c, contour in enumerate(contours):  # Run through cells in frame
-        cell = Cell(cell_index=c + 1, fov=fovIndex + 1)
-        cell.set_mask_init(contour, size=(yLen, xLen))
-        cell.assign_channel_img('phase', imageData[fovIndex, ...])
-        cells.append(cell)
-    fovCells.append(cells)
-print('========> Revising contours')
-for fovIndex in tqdm(range(imageNum)):
-    cells = fovCells[fovIndex]
-    cells_number = len(cells)
-    iter_key = [True] * cells_number
 
-    for i in range(maxium_iter):
-        all_cell_mask = [c.mask_opt for c in cells]
-        blankMask = np.sum(all_cell_mask, axis=0, dtype=bool)
-        for index, cell in enumerate(cells):
-            cellLoc = cell.contour[0, 0, :][::-1]
-            snapUL = cellLoc - snapSize
-            snapDR = cellLoc + snapSize
-            snapUL[snapUL < 0] = 0
-            snapDR[snapDR > yLen] = yLen
-            snapSlice = [slice(snapUL[0], snapDR[0]), slice(snapUL[1], snapDR[1])]
-            cellsnap = cell.channel_imgs['phase'][snapSlice[0], snapSlice[1]]
+fovCells = Parallel(n_jobs=-1, require='sharedmem')(
+    delayed(optimizeCellMaskOtsuThreshold)(imageData[fovIndex, ...], contourData[fovIndex, ...], fovIndex)
+    for fovIndex in tqdm(range(imageNum))
+)
 
-            cellmasksnap = all_cell_mask[index][snapSlice[0], snapSlice[1]]
-            cellmasksnapOld = cellmasksnap.copy()
-            othercellmask = np.logical_xor(blankMask[snapSlice[0], snapSlice[1]], cellmasksnapOld).astype(np.uint8)
-            convertsnap = 1 - rangescale(cellsnap, (0, 1.))
 
-            snapmask_new, otsu_thre = cv_otsu(convertsnap)
-            cell_mask_edge, mask_edge_xy = cv_edge_fullmask2contour(cellmasksnap, thickness=8)
-            edge_revise_mask = np.logical_or(cellmasksnap, cell_mask_edge)
-            snapmask_new = np.logical_and(edge_revise_mask, snapmask_new)
-            snapmask_new = cv_open(snapmask_new.astype(np.uint8))
-            snapmask_new = np.logical_and(snapmask_new, np.logical_not(othercellmask))
+## %% Calculating cell parameters
+def parallelCalcCell(cells: List[Cell]):
+    for cell in cells:
+        cell.cal_cell_skeleton()
+        cell.opt_skeleton()
+        cell.cal_cel_flu_level('phase')
+    return cells
 
-            if snapmask_new.any():
-                mask_ = np.zeros((yLen, xLen), dtype=np.uint8)
-                mask_[snapSlice[0], snapSlice[1]] = snapmask_new.astype(np.uint8)
-                cell.mask_opt = mask_
-                checkarray = cellmasksnapOld == snapmask_new
-                if checkarray.all():
-                    iter_key[index] = False
-            else:
-                iter_key[index] = False
-            if True not in iter_key:
-                break
 
-# Calculating call parameters
+fovCells = Parallel(n_jobs=-1)(delayed(parallelCalcCell)(fovCells[fovIndex])
+                               for fovIndex in tqdm(range(imageNum)))
+
+# %%
+
 cells_length = []
 cells_width = []
 cells_width_area = []
@@ -853,15 +957,12 @@ cellindex = []
 cells_intensity = []
 cellX = []
 cellY = []
+
 for fovIndex in tqdm(range(imageNum)):
     cells = fovCells[fovIndex]
     cells_number = len(cells)
 
-    for cell in cells:  # type: Cell
-        # cell.set_mask_init(contour, size=(yLen, xLen))
-        cell.cal_cell_skeleton()
-        cell.cal_cel_flu_level('phase')
-        # cells.append(cell)
+    for cell in tqdm(cells):  # type: Cell
         cells_length.append(cell.spine_length)
         cells_width.append(cell.width)
         cells_area.append(cell.area)
@@ -872,57 +973,6 @@ for fovIndex in tqdm(range(imageNum)):
         cellX.append(cell.contour[0, 0, 0])
         cellY.append(cell.contour[0, 0, 1])
 
-# %%  optimize mask
-
-if cell.verticalCell:
-    xindex = 0
-    yindex = 1
-else:
-    xindex = 1
-    yindex = 0
-pixle1, pixle0 = np.meshgrid(np.arange(cell.fov_size[0], dtype=int),
-                             np.arange(cell.fov_size[1], dtype=int))
-
-cell.getCellSnapRange()
-
-contoursnap = cell.mask_opt[cell.snapSlice[0], cell.snapSlice[1]]
-len0, len1 = contoursnap.shape
-subPixle1 = pixle1[cell.snapSlice[0], cell.snapSlice[1]]
-subPixle0 = pixle0[cell.snapSlice[0], cell.snapSlice[1]]
-if cell.verticalCell:
-    x_p, y_p = subPixle0, subPixle1
-    # x_p, y_p = pixle1[:len0, :len1], subPixle0[:len0, :len1]
-
-    xP, yP = cell.snapSlice[1].start, cell.snapSlice[0].start
-
-else:
-    # x_p, y_p = pixle1[:len0, :len1], pixle1[:len0, :len1]
-    x_p, y_p = subPixle1, subPixle0
-    xP, yP = cell.snapSlice[0].start, cell.snapSlice[1].start
-
-a, b, c = cell.skeleton_func.a, cell.skeleton_func.b, cell.skeleton_func.c
-
-ret_xir = FitCellParameters(cell.x_min, cell.x_max,
-                            contoursnap.astype(bool),
-                            x_p, y_p, a, b, c, cell.width_area / cell.umppx,
-                            'opt_xir')
-
-ret_abc = FitCellParameters(*ret_xir.x,
-                            contoursnap.astype(bool),
-                            x_p, y_p, a, b, c, cell.width_area / cell.umppx,
-                            'opt_poly2')
-
-ret_width = FitCellParameters(*ret_xir.x,
-                              contoursnap.astype(bool),
-                              x_p, y_p, *ret_abc.x, cell.width_area / cell.umppx,
-                              'opt_width')
-
-plotprediction([imageData[0, ...][cell.snapSlice[0], cell.snapSlice[1]],
-                contoursnap,
-                chi2])
-
-# %%
-#
 df = pd.DataFrame(data=dict(cellLength=cells_length,
                             cellWidth=cells_width,
                             cellWidthArea=cells_width_area,
@@ -933,20 +983,26 @@ df = pd.DataFrame(data=dict(cellLength=cells_length,
                             cellX=cellX,
                             cellY=cellY
                             ))
-
-fig, ax = plt.subplots(1, 1, figsize=(15, 15))
-ax.imshow(imageData[0, ...], cmap='gray')
-for cell in cells[-2:]:
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(35, 35))
+ax.imshow(imageData[-1, ...], cmap='gray', origin='upper')
+for cellindex, cell in enumerate(cells):
     if cell.spine is not None:
         if cell.verticalCell:
             ax.plot(cell.spine[:, 1], cell.spine[:, 0], lw=1)
         else:
             ax.plot(cell.spine[:, 0], cell.spine[:, 1], lw=1)
-
+    contour = cell.contour[:, 0, :]
+    x = list(contour[:, 0])
+    x.append(contour[0, 0])
+    y = list(contour[:, 1])
+    y.append(contour[0, 1])
+    ax.plot(x, y, lw=0.5, color='r')
+    ax.text(x[0] - 5, y[0] + 5, f'{cellindex}')
 ax.set_xlim(0, 2048)
 ax.set_ylim(0, 2048)
-
 fig.show()
+
 # %%
 from sklearn.decomposition import PCA
 from sklearn import manifold
@@ -994,7 +1050,7 @@ fig.show()
 # fig.savefig(tiffPath + '.tSNE.svg', bbox_inches='tight', transparent=True)
 
 tsneData = pd.DataFrame(data=np.hstack([trans_data_tSNE, z_pca.reshape(-1, 1)]))
-# tsneData.to_csv(tiffPath + '.tSNEdata.csv')
+tsneData.to_csv(tiffPath + '.tSNEdata.csv')
 
 # %% After data selection by lasso
 
@@ -1003,3 +1059,12 @@ lassoindex = lassoData.iloc[:, 1]
 lassoCells = cleanedCell.iloc[np.array(lassoindex).astype('int'), :]
 lassoCells.to_csv(tiffPath + '.tSNEdata.csv.lasso.celldata.csv')
 lassoCells.describe().to_csv(tiffPath + '.tSNEdata.csv.lasso.describe.csv')
+
+# %%  Export Cells contour
+exportCellListIndex = [128, 134, 138]
+for indexCell in exportCellListIndex:
+    cell = cells[indexCell]
+    contourX = cell.contour[:, 0, 0]
+    contourY = cell.contour[:, 0, 1]
+    contourDF = pd.DataFrame(data=dict(X=contourX, Y=contourY))
+    contourDF.to_csv(f'{tiffPath}.Cell_{indexCell}_contour.csv', index=False)
